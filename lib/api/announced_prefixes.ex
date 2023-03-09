@@ -12,14 +12,18 @@ defmodule Ripe.API.AnnouncedPrefixes do
     API.fetch(@endpoint, params)
   end
 
-  def decode({:ok, %Tesla.Env{status: 200, body: body}}) do
-    case body["status"] do
-      "ok" -> decodep(body["data"])
-      _ -> {:error, "oops"}
+  def decode(response) do
+    case API.decode(response) do
+      {:error, _} = error -> API.error(error, @endpoint)
+      data -> decodep(data)
     end
   end
 
   defp decodep(data) do
-    IO.inspect(data)
+    %{
+      "resource" => data["resource"],
+      "prefixes" => Enum.reduce(data["prefixes"], [], fn elm, acc -> [elm["prefix"] | acc] end)
+    }
+    |> then(fn m -> Map.put(m, "count", length(m["prefixes"])) end)
   end
 end
