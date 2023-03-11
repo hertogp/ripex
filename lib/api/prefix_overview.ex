@@ -1,11 +1,11 @@
-defmodule Ripe.API.NetworkInfo do
+defmodule Ripe.API.PrefixOverview do
   @moduledoc """
-  See https://stat.ripe.net/docs/02.data-api/network-info.html
+  See https://stat.ripe.net/docs/02.data-api/prefix-overview.html
   """
 
   alias Ripe.API
 
-  @endpoint "network-info"
+  @endpoint "prefix-overview"
 
   def get(ip) do
     params = [resource: "#{ip}"]
@@ -15,7 +15,12 @@ defmodule Ripe.API.NetworkInfo do
   def decode(response) do
     case API.decode(response) do
       {:error, _} = error -> API.error(error, @endpoint)
-      data -> data
+      data -> decodep(data)
     end
+  end
+
+  defp decodep(data) do
+    data
+    |> API.rename(%{"resource" => "prefix"})
   end
 end

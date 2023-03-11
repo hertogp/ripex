@@ -1,6 +1,7 @@
 defmodule Ripe.API.RpkiValidation do
   @moduledoc """
   See https://stat.ripe.net/docs/02.data-api/rpki-validation.html
+
   """
 
   alias Ripe.API
@@ -20,6 +21,8 @@ defmodule Ripe.API.RpkiValidation do
   end
 
   defp decodep(data) do
-    IO.inspect(data)
+    data
+    |> API.rename(%{"resource" => "asn", "origin" => "asn"})
+    |> API.remove(["validator", "validity"])
   end
 end
