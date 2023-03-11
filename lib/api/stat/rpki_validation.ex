@@ -5,17 +5,18 @@ defmodule Ripe.API.RpkiValidation do
   """
 
   alias Ripe.API
+  alias Ripe.API.Stat
 
   @endpoint "rpki-validation"
 
   def get(asnr, prefix) do
     params = [resource: "#{asnr}", prefix: "#{prefix}"]
-    API.fetch(@endpoint, params)
+    Stat.fetch(@endpoint, params)
   end
 
   def decode(response) do
-    case API.decode(response) do
-      {:error, _} = error -> API.error(error, @endpoint)
+    case Stat.decode(response) do
+      {:error, _} = error -> Stat.error(error, @endpoint)
       data -> decodep(data)
     end
   end

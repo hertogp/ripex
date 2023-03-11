@@ -1,20 +1,20 @@
-defmodule Ripe.API.NetworkInfo do
+defmodule Ripe.API.Stat.NetworkInfo do
   @moduledoc """
   See https://stat.ripe.net/docs/02.data-api/network-info.html
   """
 
-  alias Ripe.API
+  alias Ripe.API.Stat
 
   @endpoint "network-info"
 
   def get(ip) do
     params = [resource: "#{ip}"]
-    API.fetch(@endpoint, params)
+    Stat.fetch(@endpoint, params)
   end
 
   def decode(response) do
-    case API.decode(response) do
-      {:error, _} = error -> API.error(error, @endpoint)
+    case Stat.decode(response) do
+      {:error, _} = error -> Stat.error(error, @endpoint)
       data -> data
     end
   end

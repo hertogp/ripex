@@ -1,20 +1,21 @@
-defmodule Ripe.API.PrefixOverview do
+defmodule Ripe.API.Stat.PrefixOverview do
   @moduledoc """
   See https://stat.ripe.net/docs/02.data-api/prefix-overview.html
   """
 
   alias Ripe.API
+  alias Ripe.API.Stat
 
   @endpoint "prefix-overview"
 
   def get(ip) do
     params = [resource: "#{ip}"]
-    API.fetch(@endpoint, params)
+    Stat.fetch(@endpoint, params)
   end
 
   def decode(response) do
-    case API.decode(response) do
-      {:error, _} = error -> API.error(error, @endpoint)
+    case Stat.decode(response) do
+      {:error, _} = error -> Stat.error(error, @endpoint)
       data -> decodep(data)
     end
   end

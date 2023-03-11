@@ -1,20 +1,21 @@
-defmodule Ripe.API.AsRoutingConsistency do
+defmodule Ripe.API.Stat.AsRoutingConsistency do
   @moduledoc """
   See https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html
   """
 
   alias Ripe.API
+  alias Ripe.API.Stat
 
   @endpoint "as-routing-consistency"
 
   def get(as) do
     params = [resource: "#{as}"]
-    API.fetch(@endpoint, params)
+    Stat.fetch(@endpoint, params)
   end
 
   def decode(response) do
-    case API.decode(response) do
-      {:error, _} = error -> API.error(error, @endpoint)
+    case Stat.decode(response) do
+      {:error, _} = error -> Stat.error(error, @endpoint)
       data -> decodep(data)
     end
   end

@@ -1,20 +1,21 @@
-defmodule Ripe.API.AsOverview do
+defmodule Ripe.API.Stat.AsOverview do
   @moduledoc """
   See https://stat.ripe.net/docs/02.data-api/as-overview.html
   """
 
   alias Ripe.API
+  alias Ripe.API.Stat
 
   @endpoint "as-overview"
 
   def get(as) do
     params = [resource: "#{as}"]
-    API.fetch(@endpoint, params)
+    Stat.fetch(@endpoint, params)
   end
 
   def decode(response) do
-    case API.decode(response) do
-      {:error, _} = error -> API.error(error, @endpoint)
+    case Stat.decode(response) do
+      {:error, _} = error -> Stat.error(error, @endpoint)
       data -> decodep(data)
     end
   end
