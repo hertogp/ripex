@@ -7,7 +7,39 @@ defmodule Ripe.API do
   # Helpers
   # none yet
 
+  @after_compile __MODULE__
+
+  @cache :ripe_cache
+  def __after_compile__(_env, _bytecode) do
+    :ets.new(@cache, [:set, :public, :named_table])
+  end
+
   # API
+
+  # def start() do
+  #   :ets.new(@table, @cache_opts)
+  #   :ok
+  # rescue
+  #   ArgumentError -> {:error, :already_started}
+  # end
+
+  @doc """
+  Returns the cached results for given `url` or nil
+
+  """
+  @spec get(binary) :: any
+  def get(url) do
+    case :ets.lookup(@cache, url) do
+      [^url, data] -> data
+      _other -> nil
+    end
+  end
+
+  @spec put(binary, any) :: :ok
+  def put(url, data) do
+    true = :ets.insert(@cache, {url, data})
+    :ok
+  end
 
   @doc """
   Rename keys in `map` using `keymap`, recursively.
@@ -38,7 +70,7 @@ defmodule Ripe.API do
   from the individual map.
 
   """
-  @spec map_bykey(list, binary) :: map
+  @spec map_bykey(list | map, binary) :: map
   def map_bykey(list, key) when is_list(list) do
     for map <- list, Map.has_key?(map, key), into: %{} do
       {map[key], Map.delete(map, key)}
