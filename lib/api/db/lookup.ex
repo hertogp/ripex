@@ -74,17 +74,24 @@ defmodule Ripe.API.DB.Lookup do
 
   @spec url(binary, binary, [binary]) :: binary
   def url(object, key, flags \\ []) do
-    [object, key, flags]
+    [@base_url, object, key, flags]
     |> List.flatten()
     |> Enum.join("/")
     |> Kernel.<>(".json")
   end
 
-  @spec fetch(binary, binary, [binary]) :: {:ok | :error, Tesla.Env.result()}
-  def fetch(object, key, flags \\ []) do
-    object
-    |> url(key, flags)
+  @spec fetch(binary) :: {:ok | :error, Tesla.Env.result()}
+  def fetch(url) do
+    case Ripe.API.Cache.get(url) do
+      nil -> do_fetch(url)
+      data -> data
+    end
+  end
+
+  defp do_fetch(url) do
+    url
     |> get()
+    |> Ripe.API.Cache.put(url)
   end
 
   # generic check on successful response
@@ -93,7 +100,7 @@ defmodule Ripe.API.DB.Lookup do
     # todo:
     # - handle decoding errors
     case Jason.decode(body.body) do
-      {:ok, data} -> data
+      {:ok, data} -> decodep(data)
       {:error, error} -> {:error, error}
     end
   end
@@ -105,5 +112,23 @@ defmodule Ripe.API.DB.Lookup do
 
   def decode({:error, msg}) do
     {:error, msg}
+  end
+
+  defp decodep(data) do
+    version = Map.get(data, "version", %{}) |> Map.get("version", "0.0")
+
+    object =
+      data
+      |> get_in(["objects", "object"])
+      |> List.first()
+      |> get_in(["attributes", "attribute"])
+      |> Ripe.API.map_bykey("name")
+
+    IO.inspect(object)
+
+    data
+    |> Map.put(:spec, %{:version => version})
+    |> Map.delete("version")
+    |> Map.delete("terms-and-conditions")
   end
 end

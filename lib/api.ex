@@ -7,38 +7,39 @@ defmodule Ripe.API do
   # Helpers
   # none yet
 
-  @after_compile __MODULE__
-
-  @cache :ripe_cache
-  def __after_compile__(_env, _bytecode) do
-    :ets.new(@cache, [:set, :public, :named_table])
-  end
-
   # API
 
-  # def start() do
-  #   :ets.new(@table, @cache_opts)
-  #   :ok
-  # rescue
-  #   ArgumentError -> {:error, :already_started}
-  # end
+  @spec get_at(map | list, [binary | number]) :: any
+  def get_at(data, []),
+    do: data
 
-  @doc """
-  Returns the cached results for given `url` or nil
+  def get_at(nil, _),
+    do: nil
 
-  """
-  @spec get(binary) :: any
-  def get(url) do
-    case :ets.lookup(@cache, url) do
-      [^url, data] -> data
-      _other -> nil
-    end
+  def get_at(data, [key | tail]) when is_map(data) do
+    data
+    |> Map.get(key, nil)
+    |> get_at(tail)
   end
 
-  @spec put(binary, any) :: :ok
-  def put(url, data) do
-    true = :ets.insert(@cache, {url, data})
-    :ok
+  def get_at(data, [key | tail]) when is_list(data) do
+    data
+    |> List.pop_at(key)
+    |> elem(0)
+    |> get_at(tail)
+  end
+
+  @doc """
+  Given a map, promote values that consist of a single given `key` => value.
+  """
+  @spec promote(map, binary) :: map
+  def promote(map, key) when is_map(map) do
+    promoted =
+      for {k, v} <- map, is_map(v) and Map.has_key?(v, key), into: %{} do
+        {k, Map.get(v, key)}
+      end
+
+    Map.merge(map, promoted)
   end
 
   @doc """

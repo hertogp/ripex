@@ -12,7 +12,7 @@ defmodule Ripe.API.Cache do
   """
   @spec start() :: :ok | {:error, :already_started}
   def start() do
-    true = :ets.new(@cache, @options)
+    @cache = :ets.new(@cache, @options)
     :ok
   rescue
     ArgumentError -> {:error, :already_started}
@@ -47,5 +47,15 @@ defmodule Ripe.API.Cache do
       :ets.new(@cache, @options)
       true = :ets.insert(@cache, {url, data})
       data
+  end
+
+  @doc """
+  Delete an entry from the cache.
+
+  """
+  @spec del(binary) :: :ok
+  def del(url) do
+    true = :ets.delete(@cache, url)
+    :ok
   end
 end

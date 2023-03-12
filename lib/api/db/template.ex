@@ -17,8 +17,10 @@ defmodule Ripe.API.DB.Template do
 
   ```elixir
   %{
-    :type => "object-type",
-    :url => "url.json"
+    :spec => %{
+      type: "<object>",
+      url: ""http://rest.db.ripe.net/metadata/templates/<object>.json"
+    },
     "attr-name" => %{
       inverse: false,      # true if attr-name is in the reverse index
       lookup: true,        # false if attr-name is not a lookup key
@@ -81,14 +83,18 @@ defmodule Ripe.API.DB.Template do
   def normalize(data) when is_map(data) do
     IO.inspect(data)
 
+    spec = %{
+      :type => get_in(data, ["templates", "template"]) |> hd() |> Map.get("type"),
+      :url => get_in(data, ["link", "href"]) <> ".json"
+    }
+
     data
     |> get_in(["templates", "template"])
     |> List.first()
     |> get_in(["attributes", "attribute"])
     |> Ripe.API.map_bykey("name")
     |> attributes()
-    |> Map.put(:url, get_in(data, ["link", "href"]) <> ".json")
-    |> Map.put(:type, get_in(data, ["templates", "template"]) |> hd() |> Map.get("type"))
+    |> Map.put(:spec, spec)
   end
 
   def normalize(data),

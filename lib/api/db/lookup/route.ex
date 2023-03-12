@@ -1,12 +1,13 @@
 defmodule Ripe.API.DB.Lookup.Route do
   @moduledoc """
-  Rewturns a route obhect by key
+  Returns a route obhect by key
   """
 
   alias Ripe.API.DB.Lookup
 
   def get(key, asnr) do
     "route"
-    |> Lookup.fetch("#{key}#{asnr}")
+    |> Lookup.url("#{key}#{asnr}")
+    |> Lookup.fetch()
   end
 end
