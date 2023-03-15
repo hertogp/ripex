@@ -53,9 +53,8 @@ defmodule Ripe.API.Stat do
     end
   end
 
-  # API
-
-  def url(endpoint, params) do
+  defp url(endpoint, params \\ []) do
+    # note: we always have at least one param: @sourceapp
     params
     |> List.insert_at(0, @sourceapp)
     |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
@@ -63,15 +62,9 @@ defmodule Ripe.API.Stat do
     |> then(fn query -> "#{endpoint}/data.json?#{query}" end)
   end
 
-  def fetch(endpoint, params) do
-    endpoint
-    |> url(params)
-    |> get()
-  end
-
   # generic check on successful response
   # - return either data block OR error-tuple
-  def decode({:ok, %Tesla.Env{status: 200, body: body}}) do
+  defp decode({:ok, %Tesla.Env{status: 200, body: body}}) do
     # todo:
     # - also check body["data_call_status"] and report if other than "supported"
     # - in debug mode, log method, url, status
@@ -84,7 +77,7 @@ defmodule Ripe.API.Stat do
     end
   end
 
-  def decode({:ok, %Tesla.Env{status: status, body: body}}) do
+  defp decode({:ok, %Tesla.Env{status: status, body: body}}) do
     cond do
       status >= 100 and status < 103 ->
         {:error, {:informational, status, msg_bytag("error", body)}}
@@ -106,13 +99,84 @@ defmodule Ripe.API.Stat do
     end
   end
 
-  def decode({:error, msg}) do
+  defp decode({:error, msg}) do
     {:error, msg}
   end
 
-  def error({:error, {code, status, body}}, endpoint),
-    do: {:error, {code, status, endpoint, body}}
+  # defp error({:error, :timeout}, endpoint),
+  #   do: {:error, {:server, :timeout, endpoint}, "timeout"}
 
-  def error({:error, :timeout}, endpoint),
-    do: {:error, {:server, :timeout, endpoint}, "timeout"}
+  # API
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/announced-prefixes.html
+  """
+  def announced_prefixes(asnr) do
+    "announced-prefixes"
+    |> url([{"resource", "#{asnr}"}])
+    |> get()
+    |> decode()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/network-info.html
+  """
+  def network_info(ip) do
+    "network-info"
+    |> url([{"resource", "#{ip}"}])
+    |> get()
+    |> decode()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html
+  """
+  def abuse_c(asnr) do
+    "abuse-contact-finder"
+    |> url([{"resource", "#{asnr}"}])
+    |> get()
+    |> decode()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/as-overview.html
+  """
+  def as_overview(asnr) do
+    "as-overview"
+    |> url([{"resource", "#{asnr}"}])
+    |> get()
+    |> decode()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html
+  """
+  def as_routing(asnr) do
+    "as-routing-consistency"
+    |> url([{"resource", "#{asnr}"}])
+    |> get()
+    |> decode()
+    |> (&Map.put(&1, "prefixes", Ripe.API.map_bykey(&1["prefixes"], "prefix"))).()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/prefix-overview.html
+  """
+  def prefix_overview(ip) do
+    "prefix-overview"
+    |> url([{"resource", "#{ip}"}])
+    |> get()
+    |> decode()
+  end
+
+  @doc """
+  See https://stat.ripe.net/docs/02.data-api/rpki-validation.html
+
+  """
+  def rpki_validation(asnr, prefix) do
+    "rpki-validation"
+    |> url([{"resource", "#{asnr}"}, {"prefix", "#{prefix}"}])
+    |> get()
+    |> decode()
+  end
 end

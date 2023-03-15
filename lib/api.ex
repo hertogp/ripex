@@ -4,9 +4,6 @@ defmodule Ripe.API do
 
   """
 
-  # Helpers
-  # none yet
-
   # API
 
   @spec get_at(map | list, [binary | number]) :: any
@@ -66,15 +63,29 @@ defmodule Ripe.API do
   @doc """
   Reduce a `list` of similar maps to a map by `key`.
 
+  The maps in the list should share a common key with
+  values unique compared to the other maps in the list.
+
   Each map in the list is added to an accumulator map
-  using `map[key]` as key while also dropping `map[key]`
-  from the individual map.
+  using the common key's value (`map[key]`) as the key
+  in the accumulator map, while also dropping `map[key]`
+  from the individual map and adding a `:idx` key,value
+  pair that records its original position in the list.
+
 
   """
   @spec map_bykey(list | map, binary) :: map
   def map_bykey(list, key) when is_list(list) do
-    for map <- list, Map.has_key?(map, key), into: %{} do
-      {map[key], Map.delete(map, key)}
+    for {map, idx} <- Enum.with_index(list), Map.has_key?(map, key), into: %{} do
+      new_key = map[key]
+
+      map =
+        map
+        |> Map.put(:idx, idx)
+        |> Map.delete(key)
+
+      {new_key, map}
+      # {map[key], Map.delete(map, key)}
     end
   end
 

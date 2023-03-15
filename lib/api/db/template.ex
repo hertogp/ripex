@@ -80,13 +80,10 @@ defmodule Ripe.API.DB.Template do
     {:error, msg}
   end
 
-  def normalize(data) when is_map(data) do
+  defp normalize(data) when is_map(data) do
+    # TODO:
+    # - add `:primary_key` -> [attr-names] (order matters)
     IO.inspect(data)
-
-    spec = %{
-      :type => get_in(data, ["templates", "template"]) |> hd() |> Map.get("type"),
-      :url => get_in(data, ["link", "href"]) <> ".json"
-    }
 
     data
     |> get_in(["templates", "template"])
@@ -94,11 +91,27 @@ defmodule Ripe.API.DB.Template do
     |> get_in(["attributes", "attribute"])
     |> Ripe.API.map_bykey("name")
     |> attributes()
-    |> Map.put(:spec, spec)
+    |> Map.put(:type, get_in(data, ["templates", "template"]) |> hd() |> Map.get("type"))
+    |> Map.put(:url, get_in(data, ["link", "href"]) <> ".json")
+    |> primary_key()
   end
 
-  def normalize(data),
+  defp normalize(data),
     do: {:error, {:normalize, data}}
+
+  defp primary_key(data) do
+    # returns a list of primary keys in correct order
+    IO.inspect(data)
+
+    primary =
+      for {k, v} <- data, is_map(v) and Map.get(v, :primary, false), into: [] do
+        {v.idx, k}
+      end
+      |> Enum.sort()
+      |> Enum.map(fn elm -> elem(elm, 1) end)
+
+    Map.put(data, :primary, primary)
+  end
 
   def attributes(data) do
     keys = %{primary: false, inverse: false, lookup: false}
@@ -154,6 +167,7 @@ defmodule Ripe.API.DB.Template do
   end
 
   defp to_tuple_pair(key, val) do
-    IO.inspect({key, val}, label: :missed_tuple)
+    # retain unknown tuple pair
+    {key, val}
   end
 end

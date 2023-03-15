@@ -89,10 +89,20 @@ defmodule Ripe.API.DB.Search do
   @base_url "https://rest.db.ripe.net/search.json?"
 
   plug(Tesla.Middleware.BaseUrl, @base_url)
+  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
+
+  alias Ripe.API.DB
 
   # Helpers
   # none yet
+
+  def tmp_fetch(url) do
+    # TODO: remove when no longer needed.
+    url
+    |> get()
+    |> DB.decode()
+  end
 
   # API
 
@@ -129,5 +139,20 @@ defmodule Ripe.API.DB.Search do
 
   def decode({:error, msg}) do
     {:error, msg}
+  end
+
+  # endpoints
+  def asn_routes(asn) do
+    "#{asn}"
+    |> url([{"inverse-attribute", "origin"}])
+    |> tmp_fetch()
+    |> put_in([:api, :query], :asn_routes)
+  end
+
+  def mntner(asn) do
+    "#{asn}"
+    |> url()
+    |> tmp_fetch()
+    |> put_in([:api, :query], :asn_mntner)
   end
 end

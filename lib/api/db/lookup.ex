@@ -57,78 +57,118 @@ defmodule Ripe.API.DB.Lookup do
   - use `db.ripe.net/metadata/templates/{object-type}` to lookup an object's keys
   - in case of *multiple* primary keys, that object's primary key in a search is a *join of all keys*
       e.g. primary search key for a route object will be `<route><origin>`, ie. `<prefix><ASnr>`
+  - and the order of the keys when joining matters
 
   """
 
   use Tesla
+  alias Ripe.API.DB
 
   @base_url "https://rest.db.ripe.net/ripe"
 
   plug(Tesla.Middleware.BaseUrl, @base_url)
+  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
   # Helpers
-  # none yet
+
+  # defp decodep(data) do
+  #   # Notes:
+  #   # - we rely on the fact that only one object will be returned.
+  #
+  #   obj = Ripe.API.get_at(data, ["objects", "object", 0])
+  #
+  #   data
+  #   |> Ripe.API.get_at(["objects", "object", 0, "attributes", "attribute"])
+  #   |> Ripe.API.map_bykey("name")
+  #   |> Ripe.API.promote("value")
+  #   |> Map.put(:version, Ripe.API.get_at(data, ["version", "version"]))
+  #   |> Map.put(:url, Ripe.API.get_at(obj, ["link", "href"]) <> ".json")
+  #   |> Map.put(:type, Map.get(obj, "type"))
+  #   |> Map.put(:primary_key, primary_key(obj))
+  #   |> Map.delete("version")
+  #   |> Map.delete("terms-and-conditions")
+  # end
+  #
+  # defp primary_key(obj) do
+  #   for map <- Ripe.API.get_at(obj, ["primary-key", "attribute"]), into: [] do
+  #     map["value"]
+  #   end
+  #   |> Enum.join()
+  # end
+
+  # defp do_fetch(url) do
+  #   # called when cache comes up empty for given `url`
+  #   url
+  #   |> get()
+  #   |> decode()
+  #   |> Ripe.API.Cache.put(url)
+  # end
 
   # API
 
-  @spec url(binary, binary, [binary]) :: binary
-  def url(object, key, flags \\ []) do
-    [@base_url, object, key, flags]
-    |> List.flatten()
-    |> Enum.join("/")
-    |> Kernel.<>(".json")
+  def tmp_fetch(url) do
+    # TODO: remove when no longer needed.
+    url
+    |> get()
+    |> DB.decode()
   end
 
-  @spec fetch(binary) :: {:ok | :error, Tesla.Env.result()}
-  def fetch(url) do
-    case Ripe.API.Cache.get(url) do
-      nil -> do_fetch(url)
-      data -> data
+  @doc """
+  Returns the Lookup url associated with given `object`, primary-`key` and `flags`.
+
+  """
+  @spec url(binary, binary, [binary]) :: binary
+  def url(object, key, flags \\ []) do
+    url =
+      Enum.join([@base_url, object, key], "/")
+      |> Kernel.<>(".json")
+      |> URI.encode()
+
+    flags = Enum.join(flags, "&")
+
+    case flags do
+      "" -> "#{url}"
+      flags -> "#{url}?#{flags}"
     end
   end
 
-  defp do_fetch(url) do
-    url
-    |> get()
-    |> Ripe.API.Cache.put(url)
-  end
+  # @spec fetch(binary) :: any
+  # def fetch(url) do
+  #   case Ripe.API.Cache.get(url) do
+  #     nil -> do_fetch(url)
+  #     data -> data
+  #   end
+  # end
 
   # generic check on successful response
   # - return either data block OR error-tuple
-  def decode({:ok, %Tesla.Env{status: 200} = body}) do
-    # todo:
-    # - handle decoding errors
-    case Jason.decode(body.body) do
-      {:ok, data} -> decodep(data)
-      {:error, error} -> {:error, error}
-    end
-  end
+  # def decode({:ok, %Tesla.Env{status: 200} = body}) do
+  #   # todo:
+  #   # - handle decoding errors
+  #   case Jason.decode(body.body) do
+  #     {:ok, data} -> decodep(data)
+  #     {:error, error} -> {:error, error}
+  #   end
+  # end
+  #
+  # def decode({:ok, %Tesla.Env{status: status} = body}) do
+  #   # nb: body.body will be encoded as xml, ugh!
+  #   {:error, {status, body}}
+  # end
 
-  def decode({:ok, %Tesla.Env{status: status} = body}) do
-    # nb: body.body will be encoded as xml, ugh!
-    {:error, {status, body}}
-  end
+  # def decode({:error, msg}) do
+  #   {:error, msg}
+  # end
 
-  def decode({:error, msg}) do
-    {:error, msg}
-  end
-
-  defp decodep(data) do
-    version = Map.get(data, "version", %{}) |> Map.get("version", "0.0")
-
-    object =
-      data
-      |> get_in(["objects", "object"])
-      |> List.first()
-      |> get_in(["attributes", "attribute"])
-      |> Ripe.API.map_bykey("name")
-
-    IO.inspect(object)
-
-    data
-    |> Map.put(:spec, %{:version => version})
-    |> Map.delete("version")
-    |> Map.delete("terms-and-conditions")
+  # API - objects
+  @doc """
+  Retrieve a route object for given `prefix` and `ASnr`.
+  """
+  # @spec route(binary, binary, [binary]) :: map
+  def route(prefix, asnr, flags \\ []) do
+    "route"
+    |> url("#{prefix}#{asnr}", flags)
+    |> tmp_fetch()
   end
 end
