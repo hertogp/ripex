@@ -11,13 +11,6 @@ defmodule Ripe.API.DB.Search do
     - [primary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#descriptions-of-primary-objects)
     - [secondary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/03-Descriptions-of-Secondary-Objects.html#descriptions-of-secondary-objects)
 
-  ## URI path
-
-  - `https://rest/db/ripte.net/search?param={value}&query-string={search-term}, for xml format
-  - `https://rest.db.ripe.net/search.json?param={value}&query-string={search-term}`, for json format
-
-  The `param={value}` is optional and multiple query parameters are supported (see table below).
-
   See:
   - [API search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search)
   - [URL parameters](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#uri-query-parameters)
@@ -51,7 +44,6 @@ defmodule Ripe.API.DB.Search do
   - [flags & information](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database/#table-6-informational-queries)
   should be a good start.
 
-
   Some of the interesting `flags` include:
 
   --------------------  --------------------------------------------------------------
@@ -70,18 +62,6 @@ defmodule Ripe.API.DB.Search do
   - [primary vs lookup keys](https://apps.db.ripe.net/docs/13.Types-of-Queries/01-Queries-Using-Primary-and-Lookup-Keys.html#queries-using-primary-and-lookup-keys)
   - [what is returned](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database/#table-1-queries-using-primary-and-lookup-keys)
 
-  ## examples
-
-  - https://rest.db.ripe.net/search.json?flags=B&query-string=MinVenW-MNT
-  - https://rest.db.ripe.net/search.json?query-string=2a04:9a02:1800::/37
-  - https://rest.db.ripe.net/search.json?flags=M&type-filter=route&query-string=131.237.0.0/16
-  - https://rest.db.ripe.net/search.json?flags=B&query-string=minvenw-mnt
-  - https://rest.db.ripe.net/search.json?flags=no-filtering&query-string=MN05-RIPE
-  - https://rest.db.ripe.net/search.json?inverse-attribute=mb,ml&query-string=minvenw-mnt
-  - https://rest.db.ripe.net/search.json?inverse-attribute=mb,ml&type-filter=route,route6&query-string=minvenw-mnt
-  - https://rest.db.ripe.net/search.json?inverse-attribute=origin&type-filter=route,route6&query-string=AS42894
-  - https://rest.db.ripe.net/search.json?inverse-attribute=origin&query-string=AS42894
-
   """
 
   use Tesla
@@ -92,67 +72,155 @@ defmodule Ripe.API.DB.Search do
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
+  alias Ripe.API
   alias Ripe.API.DB
 
   # Helpers
-  # none yet
 
-  def tmp_fetch(url) do
-    # TODO: remove when no longer needed.
-    url
-    |> get()
-    |> DB.decode()
+  defp decode(%{http: 200} = result) do
+    # Search returns one or more objects
+    data_path = [:body, "objects", "object"]
+
+    IO.inspect(result, label: :result)
+
+    objects =
+      result
+      |> API.get_at(data_path)
+      |> Enum.reduce([], fn obj, acc ->
+        attrs =
+          obj
+          |> IO.inspect()
+          |> API.get_at(["attributes", "attribute"])
+          |> IO.inspect()
+          |> DB.collect_values_bykey("name", "value")
+
+        primary_key =
+          obj
+          |> API.get_at(["primary-key", "attribute"])
+          |> Enum.reduce("", fn m, acc -> acc <> m["value"] end)
+
+        map =
+          obj
+          |> Map.put(:type, Map.get(obj, "type", "unknown"))
+          |> Map.merge(attrs)
+          |> Map.put(:primary_key, primary_key)
+          |> Map.delete("attributes")
+          |> Map.delete("primary-key")
+          |> Map.delete("link")
+
+        [map | acc]
+      end)
+
+    result
+    |> Map.put(:version, API.get_at(result, [:body, "version", "version"]))
+    |> Map.put(:objects, objects)
+    |> Map.delete(:body)
   end
 
-  # API
+  defp decode(result) do
+    # note: this interpolates the '%s' in "text" string with "args"'s values
+    # %{
+    #   "args" => [%{"value" => "RIPE"}],
+    #   "severity" => "Error",
+    #   "text" => "ERROR:101: no entries found\n\nNo entries found in source %s.\n"
+    # }
+    IO.inspect(result)
+
+    reason =
+      result
+      |> API.get_at([:body, "errormessages", "errormessage"])
+      |> Enum.map(fn map -> {map["text"], Enum.map(map["args"], fn m -> m["value"] end)} end)
+      |> Enum.map(fn {msg, args} ->
+        Enum.reduce(args, msg, fn val, acc ->
+          String.replace(acc, "%s", "#{val}")
+        end)
+      end)
+      |> Enum.join()
+
+    result
+    |> Map.put(:error, reason)
+    |> Map.delete(:body)
+  end
+
+  defp fetch(url) do
+    url
+    |> API.fetch()
+    |> Map.put(:source, __MODULE__)
+    |> decode()
+  end
 
   @spec url(binary, [{binary, binary}]) :: binary
-  def url(query_string, params \\ []) do
+  defp url(query_string, params \\ []) do
     params
+    |> IO.inspect(label: :params)
     |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
     |> Enum.join("&")
     |> then(fn params -> "#{@base_url}#{params}&query-string=#{query_string}" end)
   end
 
-  @spec fetch(binary, [{binary, binary}]) :: {:ok | :error, Tesla.Env.result()}
-  def fetch(query_string, params \\ []) do
-    query_string
-    |> url(params)
-    |> get()
+  # API
+
+  @doc """
+  Search for objects having `key` in one of given inverse `inverse_attributes`.
+
+  See [RPSL types](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/) for
+  more information on object, attributes and their indexing.
+
+  If no
+
+  """
+  def by_inverse_key(query, inverse_keys) when is_list(inverse_keys) do
+    inv_attrs =
+      inverse_keys
+      |> Enum.map(fn type -> {"inverse-attribute", "#{type}"} end)
+
+    type =
+      case inv_attrs do
+        [] -> "search"
+        _ -> "by-inverse-attributes"
+      end
+
+    "#{query}"
+    |> url(inv_attrs)
+    |> fetch()
+    |> IO.inspect()
+    |> Map.put(:type, type)
+    |> Map.put(:query, "#{query}")
   end
 
-  # generic check on successful response
-  # - return either data block OR error-tuple
-  def decode({:ok, %Tesla.Env{status: 200} = body}) do
-    # todo:
-    # - handle decoding errors
-    case Jason.decode(body.body) do
-      {:ok, data} -> data
-      {:error, error} -> {:error, error}
-    end
+  def domain(revzone) do
+    "#{revzone}"
+    |> url()
+    |> fetch()
+    |> Map.put(:type, "domain")
   end
 
-  def decode({:ok, %Tesla.Env{status: status} = body}) do
-    # nb: body.body will be encoded as xml, ugh!
-    {:error, {status, body}}
+  def domains_by_mntner(mntner) do
+    "#{mntner}"
+    |> url([{"inverse-attribute", "mnt-by"}, {"type-filter", "domain"}])
+    |> fetch()
+    |> Map.put(:type, "domain_mnt_by")
   end
 
-  def decode({:error, msg}) do
-    {:error, msg}
-  end
+  @doc """
+  Retrieve a mntner object for given `asn`.
 
-  # endpoints
-  def asn_routes(asn) do
-    "#{asn}"
-    |> url([{"inverse-attribute", "origin"}])
-    |> tmp_fetch()
-    |> put_in([:api, :query], :asn_routes)
-  end
-
+  """
   def mntner(asn) do
     "#{asn}"
     |> url()
-    |> tmp_fetch()
-    |> put_in([:api, :query], :asn_mntner)
+    |> fetch()
+    |> Map.put(:type, "mntner")
+  end
+
+  @doc """
+  Retrieves routes whose, mandatory, origin attribute matches given `asn`.
+
+  """
+  def routes_by_origin(asn) do
+    "#{asn}"
+    |> url([{"inverse-attribute", "origin"}])
+    |> fetch()
+    |> Map.put(:type, "routes-by-origin")
   end
 end

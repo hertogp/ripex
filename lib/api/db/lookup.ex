@@ -4,12 +4,6 @@ defmodule Ripe.API.DB.Lookup do
   This API is used to lookup a specific object and only returns that one object
   based on an *exact* match (if found).
 
-  See
-  - [REST API Lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)
-  - [database structure](https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/01-Database-Object.html)
-  - [object types](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types)
-      - [primary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#descriptions-of-primary-objects)
-      - [secondary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/03-Descriptions-of-Secondary-Objects.html#descriptions-of-secondary-objects)
 
   ## URI path
 
@@ -20,18 +14,18 @@ defmodule Ripe.API.DB.Lookup do
 
   where path parameters are:
 
-  ------------  ----------------------------------------
+  ------------ ----------------------------------------
   source        RIPE, TEST or GRS source name
   object-type   object type to lookup
   key           primary key of object to return
-  ------------  ----------------------------------------
+  ------------ ----------------------------------------
 
   and where query parameter(s) (`?flag`) may include:
 
-  ------------  ----------------------------------------
+  ------------ ----------------------------------------
   unfiltered    e-mail attributes are not filtered
   unformatted   return the original formatting
-  ------------  ----------------------------------------
+  ------------ ----------------------------------------
 
   ## examples
 
@@ -62,64 +56,60 @@ defmodule Ripe.API.DB.Lookup do
   """
 
   use Tesla
+
+  alias Ripe.API
   alias Ripe.API.DB
 
   @base_url "https://rest.db.ripe.net/ripe"
+  @db_lookup_url "https://rest.db.ripe.net/ripe"
 
   plug(Tesla.Middleware.BaseUrl, @base_url)
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
+  # TODO
+  # - use Ripe.API.Cache
+
   # Helpers
 
-  # defp decodep(data) do
-  #   # Notes:
-  #   # - we rely on the fact that only one object will be returned.
-  #
-  #   obj = Ripe.API.get_at(data, ["objects", "object", 0])
-  #
-  #   data
-  #   |> Ripe.API.get_at(["objects", "object", 0, "attributes", "attribute"])
-  #   |> Ripe.API.map_bykey("name")
-  #   |> Ripe.API.promote("value")
-  #   |> Map.put(:version, Ripe.API.get_at(data, ["version", "version"]))
-  #   |> Map.put(:url, Ripe.API.get_at(obj, ["link", "href"]) <> ".json")
-  #   |> Map.put(:type, Map.get(obj, "type"))
-  #   |> Map.put(:primary_key, primary_key(obj))
-  #   |> Map.delete("version")
-  #   |> Map.delete("terms-and-conditions")
-  # end
-  #
-  # defp primary_key(obj) do
-  #   for map <- Ripe.API.get_at(obj, ["primary-key", "attribute"]), into: [] do
-  #     map["value"]
-  #   end
-  #   |> Enum.join()
-  # end
+  defp decode(%{http: 200} = result) do
+    # Lookup returns only one object
+    data_path = [:body, "objects", "object", 0]
 
-  # defp do_fetch(url) do
-  #   # called when cache comes up empty for given `url`
-  #   url
-  #   |> get()
-  #   |> decode()
-  #   |> Ripe.API.Cache.put(url)
-  # end
+    attrs =
+      result
+      |> IO.inspect(label: :pre)
+      |> API.get_at(data_path ++ ["attributes", "attribute"])
+      |> IO.inspect(label: :post)
+      |> DB.collect_values_bykey("name", "value")
+
+    primary_key =
+      result
+      |> API.get_at(data_path ++ ["primary-key", "attribute"])
+      |> Enum.reduce("", fn m, acc -> acc <> m["value"] end)
+
+    result
+    |> Map.put(:version, API.get_at(result, [:body, "version", "version"]))
+    |> Map.merge(attrs)
+    |> Map.put(:primary_key, primary_key)
+    |> Map.delete(:body)
+  end
 
   # API
 
-  def tmp_fetch(url) do
-    # TODO: remove when no longer needed.
+  defp fetch(url) do
     url
-    |> get()
-    |> DB.decode()
+    |> API.fetch()
+    |> Map.put(:source, __MODULE__)
+    |> decode()
   end
 
-  @doc """
-  Returns the Lookup url associated with given `object`, primary-`key` and `flags`.
-
-  """
+  # @doc """
+  # Returns the Lookup url associated with given `object`, primary-`key` and `flags`.
+  #
+  # """
   @spec url(binary, binary, [binary]) :: binary
-  def url(object, key, flags \\ []) do
+  defp url(object, key, flags) do
     url =
       Enum.join([@base_url, object, key], "/")
       |> Kernel.<>(".json")
@@ -133,42 +123,69 @@ defmodule Ripe.API.DB.Lookup do
     end
   end
 
-  # @spec fetch(binary) :: any
-  # def fetch(url) do
-  #   case Ripe.API.Cache.get(url) do
-  #     nil -> do_fetch(url)
-  #     data -> data
-  #   end
-  # end
-
-  # generic check on successful response
-  # - return either data block OR error-tuple
-  # def decode({:ok, %Tesla.Env{status: 200} = body}) do
-  #   # todo:
-  #   # - handle decoding errors
-  #   case Jason.decode(body.body) do
-  #     {:ok, data} -> decodep(data)
-  #     {:error, error} -> {:error, error}
-  #   end
-  # end
-  #
-  # def decode({:ok, %Tesla.Env{status: status} = body}) do
-  #   # nb: body.body will be encoded as xml, ugh!
-  #   {:error, {status, body}}
-  # end
-
-  # def decode({:error, msg}) do
-  #   {:error, msg}
-  # end
-
   # API - objects
+
+  # TODO move this to Ripe.API.DB
+  def url_lookup(object, keys, flags) do
+    url =
+      keys
+      |> Enum.join()
+      |> then(fn key -> "#{@db_lookup_url}/#{object}/#{key}.json" end)
+
+    case Enum.join(flags, "&") do
+      "" -> url
+      str -> url <> "?" <> str
+    end
+  end
+
   @doc """
-  Retrieve a route object for given `prefix` and `ASnr`.
+  See
+  -[Ripe Lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup)
+
+
+  """
+  def lookup(object, keys, flags) do
+    object
+    |> url_lookup(keys, flags)
+    |> API.fetch()
+    |> Map.put(:source, :DB_lookup)
+    |> decode()
+    |> Map.put(:type, object)
+  end
+
+  @doc """
+  Retrieve an [aut-num](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#description-of-the-aut-num-object)
+  object for given `asnr`.
+
+  """
+  def aut_num(asnr, flags \\ []) do
+    "aut-num"
+    |> url("#{asnr}", flags)
+    |> fetch()
+    |> Map.put(:type, "aut-num")
+  end
+
+  @doc """
+  Retrieve a [domain](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#description-of-the-domain-object)
+  object for given `rev_zone` (like e.g. `1.1.1.1.in-addr.arpa`)
+
+  """
+  def domain(rev_zone, flags \\ []) do
+    "domain"
+    |> url("#{rev_zone}", flags)
+    |> fetch()
+    |> Map.put(:type, "domain")
+  end
+
+  @doc """
+  Retrieve a [route](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#description-of-the-route-object)
+  object for given `prefix` and `ASnr`.
   """
   # @spec route(binary, binary, [binary]) :: map
   def route(prefix, asnr, flags \\ []) do
     "route"
     |> url("#{prefix}#{asnr}", flags)
-    |> tmp_fetch()
+    |> fetch()
+    |> Map.put(:type, "route")
   end
 end

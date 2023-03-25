@@ -3,6 +3,9 @@ defmodule Ripe.API.Stat do
   See https://stat.ripe.net/docs/02.data-api/
   - https://stat.ripe.net/data/<name>/data.json?param1=value1&param2=value2&...
 
+  ## datastructure returned
+  See https://stat.ripe.net/docs/02.data-api/#output-data-structure
+
   """
 
   # TODO:
@@ -21,101 +24,65 @@ defmodule Ripe.API.Stat do
 
   use Tesla
 
-  @base_url "https://stat.ripe.net/data/"
+  alias Ripe.API
+
+  @base_url "https://stat.ripe.net/data"
   @sourceapp {:sourceapp, "github-ripex"}
 
   plug(Tesla.Middleware.BaseUrl, @base_url)
+  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
   # Helpers
 
-  defp msg_bytag(tag, map) when is_map(map) do
-    msg_bytag(tag, Map.get(map, "messages", []))
-  end
-
-  defp msg_bytag(tag, []) do
-    "#{tag} - no message info found"
-  end
-
-  defp msg_bytag(_bytag, [[tag, msg]]) do
-    "#{tag} - #{msg}"
-  end
-
-  defp msg_bytag(bytag, [[tag, msg] | tail]) do
-    # get first message by given tag
-    tag = String.downcase(tag)
-
-    if String.starts_with?(tag, bytag) do
-      # bytag == String.downcase(tag) do
-      "#{tag} - #{msg}"
-    else
-      msg_bytag(bytag, tail)
-    end
-  end
-
-  defp url(endpoint, params \\ []) do
-    # note: we always have at least one param: @sourceapp
-    params
-    |> List.insert_at(0, @sourceapp)
-    |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
-    |> Enum.join("&")
-    |> then(fn query -> "#{endpoint}/data.json?#{query}" end)
-  end
-
-  # generic check on successful response
-  # - return either data block OR error-tuple
-  defp decode({:ok, %Tesla.Env{status: 200, body: body}}) do
+  defp decode(result) do
     # todo:
     # - also check body["data_call_status"] and report if other than "supported"
+    #   `-> also just take first word of the binary
     # - in debug mode, log method, url, status
     # - treat a non-existing endpoint as an error (response is ok, data empty)
     # - add data_call_status, data_call_name, version to returned data map (for the decoders)
     #   or maybe simply return the body?
-    case body["status"] do
-      "ok" -> body["data"]
-      status -> {:error, {:endpoint, status, msg_bytag(status, body)}}
-    end
+    result
+    |> Map.put(:source, __MODULE__)
+    |> API.move_keyup("version")
+    |> API.move_keyup("data_call_name", rename: "call_name")
+    |> API.move_keyup("data_call_status", rename: "call_status")
+    |> API.move_keyup("status")
+    |> API.move_keyup("data")
+    |> API.move_keyup("messages", transform: &decode_messages/1)
+    |> Map.delete(:body)
   end
 
-  defp decode({:ok, %Tesla.Env{status: status, body: body}}) do
-    cond do
-      status >= 100 and status < 103 ->
-        {:error, {:informational, status, msg_bytag("error", body)}}
-
-      status >= 200 and status < 300 ->
-        {:error, {:unsuccessful, status, msg_bytag("error", body)}}
-
-      status >= 300 and status < 400 ->
-        {:error, {:redirect, status, msg_bytag("error", body)}}
-
-      status >= 400 and status < 500 ->
-        {:error, {:client, status, msg_bytag("error", body)}}
-
-      status >= 500 and status < 600 ->
-        {:error, {:server, status, msg_bytag("error", body)}}
-
-      true ->
-        {:error, {:unknown, status, msg_bytag("error", body)}}
-    end
+  defp decode_messages(list) do
+    list
+    |> Enum.reduce(%{}, fn [k, v], acc ->
+      case acc[k] do
+        nil -> Map.put(acc, k, v)
+        val -> Map.put(acc, k, val <> "\n" <> v)
+      end
+    end)
   end
 
-  defp decode({:error, msg}) do
-    {:error, msg}
+  def url(endpoint, params) do
+    # TODO make private
+    params
+    |> List.insert_at(0, @sourceapp)
+    |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+    |> Enum.join("&")
+    |> then(fn query -> "#{@base_url}/#{endpoint}/data.json?#{query}" end)
   end
-
-  # defp error({:error, :timeout}, endpoint),
-  #   do: {:error, {:server, :timeout, endpoint}, "timeout"}
 
   # API
 
-  @doc """
-  See https://stat.ripe.net/docs/02.data-api/announced-prefixes.html
-  """
   def announced_prefixes(asnr) do
     "announced-prefixes"
     |> url([{"resource", "#{asnr}"}])
-    |> get()
+    |> API.fetch(opts: [recv_timeout: 10_000])
     |> decode()
+    |> API.move_keyup("prefixes",
+      transform: fn l -> Enum.reduce(l, fn m, acc -> [Map.get(m, "prefix") | acc] end) end
+    )
   end
 
   @doc """
@@ -124,8 +91,11 @@ defmodule Ripe.API.Stat do
   def network_info(ip) do
     "network-info"
     |> url([{"resource", "#{ip}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
+    |> API.move_keyup("asns")
+    |> API.move_keyup("prefix")
+    |> Map.delete("data")
   end
 
   @doc """
@@ -134,8 +104,11 @@ defmodule Ripe.API.Stat do
   def abuse_c(asnr) do
     "abuse-contact-finder"
     |> url([{"resource", "#{asnr}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
+    |> API.move_keyup("abuse_contacts")
+    |> API.move_keyup("authoritative_rir")
+    |> Map.delete("data")
   end
 
   @doc """
@@ -144,19 +117,31 @@ defmodule Ripe.API.Stat do
   def as_overview(asnr) do
     "as-overview"
     |> url([{"resource", "#{asnr}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
+    |> API.move_keyup("announced")
+    |> API.move_keyup("holder")
+    |> API.move_keyup("block")
+    |> API.move_keyup("resource", rename: "asn")
+    |> API.move_keyup("type", rename: "asn")
+    |> Map.delete("data")
   end
 
   @doc """
   See https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html
   """
   def as_routing(asnr) do
+    # try 1136 to see a timeout with 10_0000 default timeout
     "as-routing-consistency"
     |> url([{"resource", "#{asnr}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
-    |> (&Map.put(&1, "prefixes", Ripe.API.map_bykey(&1["prefixes"], "prefix"))).()
+    |> API.move_keyup("imports")
+    |> API.move_keyup("exports")
+    |> API.move_keyup("prefixes", transform: fn l -> API.map_bykey(l, "prefix") end)
+    |> API.move_keyup("authority")
+    |> API.move_keyup("resource", rename: "asn")
+    |> Map.delete("data")
   end
 
   @doc """
@@ -165,8 +150,19 @@ defmodule Ripe.API.Stat do
   def prefix_overview(ip) do
     "prefix-overview"
     |> url([{"resource", "#{ip}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
+    |> API.move_keyup("resource", rename: "prefix")
+    |> API.move_keyup("actual_num_related")
+    |> API.move_keyup("announced")
+    |> API.move_keyup("asns", transform: fn l -> API.map_bykey(l, "asn") end)
+    |> API.move_keyup("block")
+    |> API.move_keyup("is_less_specific")
+    |> API.move_keyup("actual_num_related")
+    |> API.move_keyup("num_filtered_out")
+    |> API.move_keyup("related_prefixes")
+    |> API.move_keyup("resource", rename: "prefix")
+    |> Map.delete("data")
   end
 
   @doc """
@@ -174,9 +170,34 @@ defmodule Ripe.API.Stat do
 
   """
   def rpki_validation(asnr, prefix) do
+    # todo: turn roa into "prefix^maxlength@AS-nr"
     "rpki-validation"
     |> url([{"resource", "#{asnr}"}, {"prefix", "#{prefix}"}])
-    |> get()
+    |> API.fetch()
     |> decode()
+    |> API.move_keyup("prefix")
+    |> API.move_keyup("resource", rename: "asn")
+    |> API.move_keyup("status", rename: "rpki_status")
+    |> API.move_keyup("validating_roas")
+    |> API.move_keyup("validator")
+    |> Map.delete("data")
+  end
+
+  @doc """
+  Returns a map like `Ripe.API.Stat.as_routing/1` with `rpki` status added for each prefix.
+  """
+  def as_rpki(asnr) do
+    asnr
+    |> as_routing()
+    |> update_in(["prefixes"], fn map ->
+      for {pfx, attrs} <- map, into: %{} do
+        rpki = rpki_validation(asnr, pfx)
+        roas = Enum.filter(rpki["validating_roas"], fn roa -> roa["validity"] == "valid" end)
+        pki_attrs = %{"rpki" => rpki["rpki_status"], "roas" => roas}
+
+        {pfx, Map.merge(attrs, pki_attrs)}
+      end
+    end)
+    |> update_in(["call_name"], fn name -> name <> " + rpki_validation" end)
   end
 end

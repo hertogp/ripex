@@ -4,9 +4,58 @@ defmodule Ripe.API do
 
   """
 
+  use Tesla
+  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
+  plug(Tesla.Middleware.JSON)
+
   # API
 
-  @spec get_at(map | list, [binary | number]) :: any
+  @spec decode(Tesla.Env.result()) :: map
+  def decode({:ok, env}) do
+    %{
+      url: env.url,
+      http: env.status,
+      body: env.body,
+      method: env.method,
+      opts: env.opts
+    }
+  end
+
+  def decode({:error, msg}),
+    do: %{error: msg, http: -1}
+
+  @doc """
+  Returns a map contained the decoded response from Ripe based on url.
+
+  In case of a succesful `t:Tesla.Env.Result/0`, the map contains atom keys:
+  - `:url`, the url visited
+  - `:http`, the https status of the call, (-1 if another error occurred)
+  - `:body`, the body of the result
+  - `:method`, http method used, usually jus `:get`
+  - `opts`, any options passed to Tesla (like recv_timeout)`
+
+  Note that this might still mean that the endpoint had problems returning
+  any usefull data.
+
+  In case of an unsuccessful `t:Tesla.Env.Result/0`, the map containsL
+  - `:http => -1`
+  - `:error => msg`
+
+  Note:
+  - speecify a timeout via: `[opts: [recv_timeout: 10_000]]`
+  - It's up to the caller to further decode the body of the response.
+
+  """
+  @spec fetch(binary, Keyword.t()) :: map
+  def fetch(url, opts \\ []) do
+    # Specify a timeout using: [opts: [recv_timeout: 10_000]]
+    # See https://hexdocs.pm/tesla/Tesla.Env.html#content
+    url
+    |> get(opts)
+    |> decode()
+  end
+
+  @spec get_at(map | list, [atom | binary | number]) :: any
   def get_at(data, []),
     do: data
 
@@ -34,6 +83,18 @@ defmodule Ripe.API do
     promoted =
       for {k, v} <- map, is_map(v) and Map.has_key?(v, key), into: %{} do
         {k, Map.get(v, key)}
+      end
+
+    Map.merge(map, promoted)
+  end
+
+  def move_keyup(map, key, opts \\ []) do
+    name = Keyword.get(opts, :rename, key)
+    func = Keyword.get(opts, :transform, fn x -> x end)
+
+    promoted =
+      for {_k, v} <- map, is_map(v) and Map.has_key?(v, key), into: %{} do
+        {name, Map.get(v, key) |> func.()}
       end
 
     Map.merge(map, promoted)
@@ -74,7 +135,7 @@ defmodule Ripe.API do
 
 
   """
-  @spec map_bykey(list | map, binary) :: map
+  @spec map_bykey(list, binary) :: map
   def map_bykey(list, key) when is_list(list) do
     for {map, idx} <- Enum.with_index(list), Map.has_key?(map, key), into: %{} do
       new_key = map[key]
