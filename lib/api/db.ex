@@ -16,14 +16,32 @@ defmodule Ripe.API.DB do
 
   alias Ripe.API
 
-  @db_lookup_url "https://rest.db.ripe.net/ripe"
+  # @db_lookup_url "https://rest.db.ripe.net/ripe"
   @db_template_url "https://rest.db.ripe.net/metadata/templates"
   @db_search_url "https://rest.db.ripe.net/search.json?"
 
-  # DECODE helpers
+  # Helpers
+
+  def collect_keys_byvalue(map, fun) when is_map(map) do
+    # collect keys by value using given `fun`
+    for {k, m} <- map, fun.(m), into: [] do
+      k
+    end
+    |> Enum.filter(fn k -> k end)
+  end
+
+  def collect_values_bykey(list, key, valkey) when is_list(list) do
+    list
+    |> Enum.filter(fn m -> Map.has_key?(m, key) end)
+    |> Enum.reduce(%{}, fn map, acc ->
+      k = Map.get(map, key)
+      v = Map.get(acc, k, [])
+      Map.put(acc, k, v ++ [map[valkey]])
+    end)
+  end
 
   defp decode(%{http: 200, source: :"Ripe.API.DB.lookup"} = result) do
-    # Lookup returns only one object
+    # lookup returns only one object
     data_path = [:body, "objects", "object", 0]
 
     obj =
@@ -38,6 +56,7 @@ defmodule Ripe.API.DB do
   end
 
   defp decode(%{http: 200, source: :"Ripe.API.DB.search"} = result) do
+    # search returns one or more objects
     data_path = [:body, "objects", "object"]
 
     objects =
@@ -53,7 +72,7 @@ defmodule Ripe.API.DB do
   end
 
   defp decode(%{http: 200, source: :"Ripe.API.DB.template"} = result) do
-    # template return only one object in its own formatt
+    # template returns only one object in its own formatt
     data_path = [:body, "templates", "template", 0]
 
     attrs =
@@ -81,6 +100,7 @@ defmodule Ripe.API.DB do
   end
 
   defp decode(%{source: :"Ripe.API.DB.lookup"} = result) do
+    # not a http: 200 -> error
     reason =
       result
       |> API.get_at([:body, "errormessages", "errormessage"])
@@ -93,6 +113,7 @@ defmodule Ripe.API.DB do
   end
 
   defp decode(%{source: :"Ripe.API.DB.search"} = result) do
+    # not a http: 200 -> error
     reason =
       result
       |> API.get_at([:body, "errormessages", "errormessage"])
@@ -110,12 +131,14 @@ defmodule Ripe.API.DB do
   end
 
   defp decode(%{source: :"Ripe.API.DB.template"} = result) do
+    # not a http: 200 -> error
     result
     |> Map.put(:error, result[:body]["message"])
     |> Map.delete(:body)
   end
 
   defp decode_obj(obj) do
+    # decode a single object
     attrs =
       obj
       |> IO.inspect(label: :object)
@@ -138,26 +161,123 @@ defmodule Ripe.API.DB do
   # API
 
   @doc """
-  Retrieve a single object for given `object`-type, search `keys` optionally using `flags`.
+  Retrieve a single object for given `object`-type and search `keys`.
 
-  The result is a map with atom-keys providing API information and string keys for the information
-  items retrieved through the API call.
+  The `object` specifies the name of either a
+  [primary](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html)
+  or a
+  [secondary](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/03-Descriptions-of-Secondary-Objects.html)
+  object.
+
+  The list of `keys` consists of one or more string values that make up the
+  primary key of the object to retrieve.
+
+  The options in `opts` may include
+  - `unfiltered: true`, so notify- and email-attributes are not filtered out (default `false`)
+  - `unformatted: true`, in which case the attribute values contain their original formatting.
+  - `:timeout number`, where number defaults to 2000 ms.
 
   See
   -[Ripe Lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup)
 
 
   """
-  def lookup(object, keys, flags \\ []) do
-    keyz = Enum.join(keys)
-    flagz = Enum.join(flags, "&")
+  def lookup(object, keys, opts \\ []) do
+    key = Enum.join(keys)
+    opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
 
-    "https://rest.db.ripe.net/ripe/#{object}/#{keyz}.json?#{flagz}"
-    |> String.replace_prefix("?", "")
-    |> API.fetch()
+    flags =
+      [
+        Keyword.get(opts, :unfiltered, false) && "unfiltered",
+        Keyword.get(opts, :unformatted, false) && "unformatted"
+      ]
+      |> Enum.filter(fn x -> x end)
+      |> Enum.join("&")
+
+    "https://rest.db.ripe.net/ripe/#{object}/#{key}.json?#{flags}"
+    |> String.replace_suffix("?", "")
+    |> API.fetch(opts)
     |> Map.put(:source, :"Ripe.API.DB.lookup")
     |> decode()
     |> Map.put(:type, object)
+  end
+
+  @doc """
+  Retrieve one or more objects via [Ripe
+    Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
+
+  The `query` parameter specifies the string value to search for.  By default this will find objects
+  whose primary key matches or have a lookup key that (partially) matches.
+
+  See also:
+  - [primary vs lookup keys](https://apps.db.ripe.net/docs/13.Types-of-Queries/01-Queries-Using-Primary-and-Lookup-Keys.html#queries-using-primary-and-lookup-keys)
+  - [what is returned](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database/#table-1-queries-using-primary-and-lookup-keys)
+
+  Use `params` to list additional [query
+    parameters](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#uri-query-parameters)
+  in the form of `[{"name", ["value", ...]}, ..]` as needed.  They include:
+
+  - `"source":`, the name or list of names of the sources to be searched
+  - `"inverse-attribute":`,  the name or list of names of inverse indexed attributes to search
+  - `"include-tag":`, name or list of names of tags that RPSL objects must have
+  - `"exclude-tag":`, name or list of names of tags that RPSL objects cannot have
+  - `"type-filter":`, type or list of types the returned objects must have
+  - `"flags":`, a flag or list of flags to influence the search behaviour (see below)
+  - `"unformatted":`, if true, attribute values maintain their original formatting
+  - `"managed-attributes":`, if true, adds a "managed" field to objects if they are (also) managed by RIPE
+  - `"resource-holder":`, if true, include resource holder organisation (id and name)
+  - `"abuse-contact":`, if true, include abuse-c email of the resource (if any)
+  - `"limit"`, max nr of RPSL obj's to return in the response
+  - `"offset"`, return RPSL obj's from a specified offset
+
+  See [flags](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database) for
+  more information on how to use them and in what type of queries.
+
+  Some of the interesting `flags` include:
+
+  - `B`, unfiltered
+  - `k`, persistent connectin
+  - `G`, turn grouping off
+  - `M`, (all-more) include all more specific matches
+  - `m`, (one-more) include 1-level more specific
+  - `L`, (all-less) include less specific matches
+  - `l`, (one-less) include 1-level less specific
+  - `x`, (exact)  exact match (domain objects)
+  - `r`, (no-referenced) turns off retrieving additional contact information
+
+
+  ## Examples
+
+  - find all more specific inetnum and route objects for a given prefix:
+      - query=<prefix>
+      - params = [{"flags", ["M", "B"]}]
+
+  """
+  def search(query, opts \\ []) do
+    db_search = "https://rest.db.ripe.net/search.json?"
+
+    flags =
+      opts
+      |> Keyword.filter(fn {_k, v} -> v == true end)
+      |> Enum.map(fn {k, _v} -> k end)
+
+    params =
+      opts
+      |> Keyword.drop([:timeout])
+      |> Keyword.drop(flags)
+      |> Enum.map(fn {k, v} -> {String.replace("#{k}", "_", "-", global: true), List.wrap(v)} end)
+      |> Enum.map(fn {k, l} -> for v <- l, do: "#{k}=#{v}" end)
+      |> List.flatten()
+      |> Kernel.++(flags)
+      |> Enum.join("&")
+
+    timeout = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+
+    "#{db_search}#{params}&query-string=#{query}"
+    |> API.fetch(timeout)
+    |> Map.put(:source, :"Ripe.API.DB.search")
+    |> Map.put(:query, "#{query}")
+    |> decode()
   end
 
   @doc """
@@ -166,8 +286,9 @@ defmodule Ripe.API.DB do
   Each template fetched will be decoded into a map and cached.
 
   See:
+  - [Ripe Template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template)
   - https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/01-Database-Object.html
-  - https://apps.db.ripe.net/docs/04.RPSL-Object-Types/
+  - [RPSL object types](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/)
 
   Notes:
   - attribute names consist of alphanumeric characters plus hyphens
@@ -181,46 +302,5 @@ defmodule Ripe.API.DB do
     |> decode()
   end
 
-  @doc """
-  See [Ripe Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
-
-  - `query` is the mandatory query-string being search for
-  - `params` is a list of [{"name", ["values"]}]
-  """
-  def search(query, params \\ []) do
-    qparams =
-      params
-      |> IO.inspect(label: :params)
-      |> Enum.reduce([], fn {name, vals}, acc ->
-        acc ++ Enum.reduce(vals, [], fn val, acc -> ["#{name}=#{val}" | acc] end)
-      end)
-      |> Enum.join("&")
-
-    "#{@db_search_url}#{qparams}&query-string=#{query}"
-    |> API.fetch()
-    |> IO.inspect()
-    |> Map.put(:source, :"Ripe.API.DB.search")
-    |> Map.put(:query, "#{query}")
-    |> decode()
-  end
-
   # Helpers
-
-  def collect_keys_byvalue(map, fun) when is_map(map) do
-    # collect keys by value using given `fun`
-    for {k, m} <- map, fun.(m), into: [] do
-      k
-    end
-    |> Enum.filter(fn k -> k end)
-  end
-
-  def collect_values_bykey(list, key, valkey) when is_list(list) do
-    list
-    |> Enum.filter(fn m -> Map.has_key?(m, key) end)
-    |> Enum.reduce(%{}, fn map, acc ->
-      k = Map.get(map, key)
-      v = Map.get(acc, k, [])
-      Map.put(acc, k, v ++ [map[valkey]])
-    end)
-  end
 end

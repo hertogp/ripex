@@ -1,10 +1,10 @@
 defmodule Ripe.API do
   @moduledoc """
-  Utility functions to be used by all endpoints across all RIPE API's..
+  Utility functions to be used by all endpoints across all RIPE API's.
 
   """
 
-  use Tesla
+  use Tesla, only: [:get], docs: false
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
@@ -27,22 +27,18 @@ defmodule Ripe.API do
   @doc """
   Returns a map contained the decoded response from Ripe based on url.
 
-  In case of a succesful `t:Tesla.Env.Result/0`, the map contains atom keys:
+  In case of a succesful `t:Tesla.Env.result/0`, the map contains atom keys:
   - `:url`, the url visited
   - `:http`, the https status of the call, (-1 if another error occurred)
   - `:body`, the body of the result
   - `:method`, http method used, usually jus `:get`
-  - `opts`, any options passed to Tesla (like recv_timeout)`
+  - `opts`, any options passed to Tesla (like recv_timeout)
 
   Note that this might still mean that the endpoint had problems returning
   any usefull data.
 
-  In case of an unsuccessful `t:Tesla.Env.Result/0`, the map containsL
-  - `:http => -1`
-  - `:error => msg`
-
   Note:
-  - speecify a timeout via: `[opts: [recv_timeout: 10_000]]`
+  - specify a timeout via: `[opts: [recv_timeout: 10_000]]`
   - It's up to the caller to further decode the body of the response.
 
   """
