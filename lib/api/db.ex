@@ -16,13 +16,15 @@ defmodule Ripe.API.DB do
 
   alias Ripe.API
 
-  # @db_lookup_url "https://rest.db.ripe.net/ripe"
-  @db_template_url "https://rest.db.ripe.net/metadata/templates"
-  @db_search_url "https://rest.db.ripe.net/search.json?"
+  # TODO:
+  # - add https://rest.db.ripe.net/abuse-contact/{resource}
+  # - add subAPI https://ipmap.ripe.net/ (since rest.db.ripe.net/geolocation doesn't work anymore)
+  #   `-> see https://ipmap.ripe.net/docs/02.api-reference/
+  # - add flags: "r" by default to help avoid retrieving too much personal data (and get blocked)
 
   # Helpers
 
-  def collect_keys_byvalue(map, fun) when is_map(map) do
+  defp collect_keys_byvalue(map, fun) when is_map(map) do
     # collect keys by value using given `fun`
     for {k, m} <- map, fun.(m), into: [] do
       k
@@ -30,7 +32,7 @@ defmodule Ripe.API.DB do
     |> Enum.filter(fn k -> k end)
   end
 
-  def collect_values_bykey(list, key, valkey) when is_list(list) do
+  defp collect_values_bykey(list, key, valkey) when is_list(list) do
     list
     |> Enum.filter(fn m -> Map.has_key?(m, key) end)
     |> Enum.reduce(%{}, fn map, acc ->
@@ -183,6 +185,12 @@ defmodule Ripe.API.DB do
 
   """
   def lookup(object, keys, opts \\ []) do
+    # TODO: use "Ripe.API.DB.lookup", no need for it to be an atom
+    # - adjust decode pattern matching accordingly
+    # - "#{@module}.lookup", where @module is "Ripe.API.DB"
+    # - handle 301 redirect (e.g. for AS8075 -> means RIPE-NONAUTH
+    #   the header's "location" will point to a link that contains an error
+    #   message in the body
     key = Enum.join(keys)
     opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
 
@@ -197,6 +205,7 @@ defmodule Ripe.API.DB do
     "https://rest.db.ripe.net/ripe/#{object}/#{key}.json?#{flags}"
     |> String.replace_suffix("?", "")
     |> API.fetch(opts)
+    |> IO.inspect()
     |> Map.put(:source, :"Ripe.API.DB.lookup")
     |> decode()
     |> Map.put(:type, object)
@@ -204,7 +213,7 @@ defmodule Ripe.API.DB do
 
   @doc """
   Retrieve one or more objects via [Ripe
-    Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
+  Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
 
   The `query` parameter specifies the string value to search for.  By default this will find objects
   whose primary key matches or have a lookup key that (partially) matches.
@@ -214,21 +223,21 @@ defmodule Ripe.API.DB do
   - [what is returned](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database/#table-1-queries-using-primary-and-lookup-keys)
 
   Use `params` to list additional [query
-    parameters](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#uri-query-parameters)
+  parameters](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#uri-query-parameters)
   in the form of `[{"name", ["value", ...]}, ..]` as needed.  They include:
 
-  - `"source":`, the name or list of names of the sources to be searched
+  - `source:`, the name or list of names of the sources to be searched
   - `"inverse-attribute":`,  the name or list of names of inverse indexed attributes to search
   - `"include-tag":`, name or list of names of tags that RPSL objects must have
   - `"exclude-tag":`, name or list of names of tags that RPSL objects cannot have
   - `"type-filter":`, type or list of types the returned objects must have
-  - `"flags":`, a flag or list of flags to influence the search behaviour (see below)
-  - `"unformatted":`, if true, attribute values maintain their original formatting
-  - `"managed-attributes":`, if true, adds a "managed" field to objects if they are (also) managed by RIPE
+  - `flags:`, a flag or list of flags to influence the search behaviour (see below)
+  - `unformatted:`, if true, attribute values maintain their original formatting
+  - `"managed-attributes":`, if true, adds a RIPE "managed" boolean field to objects
   - `"resource-holder":`, if true, include resource holder organisation (id and name)
   - `"abuse-contact":`, if true, include abuse-c email of the resource (if any)
-  - `"limit"`, max nr of RPSL obj's to return in the response
-  - `"offset"`, return RPSL obj's from a specified offset
+  - `limit:`, max nr of RPSL obj's to return in the response
+  - `offset:`, return RPSL obj's from a specified offset
 
   See [flags](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database) for
   more information on how to use them and in what type of queries.
@@ -245,15 +254,25 @@ defmodule Ripe.API.DB do
   - `x`, (exact)  exact match (domain objects)
   - `r`, (no-referenced) turns off retrieving additional contact information
 
+  Adding the `flags: "r"` will help prevent exceeding the [Fair Use
+    Policy](https://www.ripe.net/manage-ips-and-asns/db/support/documentation/ripe-database-acceptable-use-policy),
+  especially when looking for more specific objects for a large prefix since there is a limit on the
+  amount of contact information you can retrieve in a day.
 
   ## Examples
 
-  - find all more specific inetnum and route objects for a given prefix:
-      - query=<prefix>
-      - params = [{"flags", ["M", "B"]}]
+  - `search("as3333", "inverse-attribute": "origin")`
+    - find all route(6) objects whose origin matches as3333
+
+  - `search("RIPE-NCC-MNT", "inverse-attribute": "mnt-by", flags: "r", "type-filter": "domain")`
+    - find all domains maintained by RIPE-NCC-MNT, without any additional contact information
+
+  - `search("RIPE-NCC-MNT", "inverse-attribute": "mnt-by", "type-filter": ["inetnum", "inet6num"], flags: "r")`
+    - find all inet(6)num's maintained by RIPE-NCC-MNT, without additional contact information
 
   """
   def search(query, opts \\ []) do
+    # TODO: URI enocde the url so you can look for "first lastname"
     db_search = "https://rest.db.ripe.net/search.json?"
 
     flags =
@@ -295,7 +314,9 @@ defmodule Ripe.API.DB do
   - attributes names are case-insensitive, RIPE DB converts them to lowercase
   """
   def template(object) do
-    "#{@db_template_url}/#{object}.json"
+    db_template = "https://rest.db.ripe.net/metadata/templates"
+
+    "#{db_template}/#{object}.json"
     |> API.fetch()
     |> Map.put(:source, :"Ripe.API.DB.template")
     |> Map.put(:type, "#{object}")

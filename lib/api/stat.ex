@@ -1,10 +1,6 @@
 defmodule Ripe.API.Stat do
   @moduledoc """
-  See https://stat.ripe.net/docs/02.data-api/
-  - https://stat.ripe.net/data/<name>/data.json?param1=value1&param2=value2&...
-
-  ## datastructure returned
-  See https://stat.ripe.net/docs/02.data-api/#output-data-structure
+  This module contains functions to retrieve information from the [RIPEstat API](https://stat.ripe.net/docs/02.data-api/).
 
   """
 
@@ -16,13 +12,10 @@ defmodule Ripe.API.Stat do
   # - add whois client to retrieve contact information, e.g. via
   #   https://rest.db.ripe.net/{source}/{object-type}/{key}.json
   #   see https://apps-test.db.ripe.net/docs/06.Update-Methods/01-RESTful-API.html#restful-uri-format
-  #   Alternative format seems to be:
-  #   https://rest.db.ripe.net/search.json?query-string=2a04:9a02:1800::/37
-  #   `-> see https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search
-  # - examples
-  #   https://rest.db.ripe.net/search.json?flags=M&query-string=1.2.0.0/16
+  # - Normalize xxxx to ASxxxx for AS-numbers
+  # - use source: "Ripe.API.Stat.function" (as a string) (maybe create nx decode for that?)
 
-  use Tesla
+  use Tesla, only: [:get], docs: false
 
   alias Ripe.API
 
@@ -43,11 +36,13 @@ defmodule Ripe.API.Stat do
     # - treat a non-existing endpoint as an error (response is ok, data empty)
     # - add data_call_status, data_call_name, version to returned data map (for the decoders)
     #   or maybe simply return the body?
+    first_word = fn str -> String.split(str) |> hd() end
+
     result
     |> Map.put(:source, __MODULE__)
     |> API.move_keyup("version")
     |> API.move_keyup("data_call_name", rename: "call_name")
-    |> API.move_keyup("data_call_status", rename: "call_status")
+    |> API.move_keyup("data_call_status", rename: "call_status", transform: first_word)
     |> API.move_keyup("status")
     |> API.move_keyup("data")
     |> API.move_keyup("messages", transform: &decode_messages/1)
@@ -55,11 +50,12 @@ defmodule Ripe.API.Stat do
   end
 
   defp decode_messages(list) do
+    # concatenate messages per message-type
     list
-    |> Enum.reduce(%{}, fn [k, v], acc ->
-      case acc[k] do
-        nil -> Map.put(acc, k, v)
-        val -> Map.put(acc, k, val <> "\n" <> v)
+    |> Enum.reduce(%{}, fn [type, msg], acc ->
+      case acc[type] do
+        nil -> Map.put(acc, type, msg)
+        val -> Map.put(acc, type, "#{val}\n#{msg}")
       end
     end)
   end
@@ -75,13 +71,22 @@ defmodule Ripe.API.Stat do
 
   # API
 
+  @doc """
+  Retrieve the [announced
+    prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html#announced-prefixes)
+    for given `asnr`.
+
+  `asnr` should contain just the AS-number without the "AS"-prefix.
+
+  """
   def announced_prefixes(asnr) do
     "announced-prefixes"
     |> url([{"resource", "#{asnr}"}])
     |> API.fetch(opts: [recv_timeout: 10_000])
     |> decode()
+    |> IO.inspect()
     |> API.move_keyup("prefixes",
-      transform: fn l -> Enum.reduce(l, fn m, acc -> [Map.get(m, "prefix") | acc] end) end
+      transform: fn l -> Enum.reduce(l, [], fn m, acc -> [Map.get(m, "prefix") | acc] end) end
     )
   end
 
@@ -92,6 +97,7 @@ defmodule Ripe.API.Stat do
     "network-info"
     |> url([{"resource", "#{ip}"}])
     |> API.fetch()
+    |> Map.put(:type, "#{__MODULE__}.network-info")
     |> decode()
     |> API.move_keyup("asns")
     |> API.move_keyup("prefix")

@@ -8,10 +8,12 @@ defmodule Ripe.API do
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
-  # API
+  # Helpers
 
   @spec decode(Tesla.Env.result()) :: map
-  def decode({:ok, env}) do
+  defp decode({:ok, env}) do
+    # TODO: anything else than http 200 (e.g. a 301) should be treated as an
+    # error
     %{
       url: env.url,
       http: env.status,
@@ -21,8 +23,10 @@ defmodule Ripe.API do
     }
   end
 
-  def decode({:error, msg}),
+  defp decode({:error, msg}),
     do: %{error: msg, http: -1}
+
+  # API
 
   @doc """
   Returns a map contained the decoded response from Ripe based on url.
@@ -48,6 +52,7 @@ defmodule Ripe.API do
     # See https://hexdocs.pm/tesla/Tesla.Env.html#content
     url
     |> get(opts)
+    |> IO.inspect(label: :api_fetch)
     |> decode()
   end
 
