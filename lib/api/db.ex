@@ -1,28 +1,39 @@
 defmodule Ripe.API.DB do
   @moduledoc """
-  This module contains functions to:
-  = [lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup) RIPE database objects
-  - [search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search) the RIPE database
-  - get a [template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template) for a specified object.
+  This module implements some of the [RESTful
+    API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s
+  of the [RIPE NCC database](https://apps.db.ripe.net/docs/) to retrieve its
+  [objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types).
 
-  See
-  - [REST API Lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)
-  - [database structure](https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/01-Database-Object.html)
-  - [object types](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types)
-      - [primary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#descriptions-of-primary-objects)
-      - [secondary objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/03-Descriptions-of-Secondary-Objects.html#descriptions-of-secondary-objects)
+
+  - [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact),
+    retrieve abuse contact information if available.
+  - [lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup),
+    retrieve a single object form the RIPE database.
+  - [search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search),
+    retrieve one or more objects from the RIPE database
+  - [template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template),
+    retrieve a single template for a specified object type..
 
   """
 
   alias Ripe.API
 
-  # TODO:
+  @db_abuse_c "https://rest.db.ripe.net/abuse-contact"
+  @db_lookup "https://rest.db.ripe.net/ripe"
+  @db_template "https://rest.db.ripe.net/metadata/templates"
+  @db_search "https://rest.db.ripe.net/search.json?"
+
+  # [[ TODO: ]]
   # - add https://rest.db.ripe.net/abuse-contact/{resource}
   # - add subAPI https://ipmap.ripe.net/ (since rest.db.ripe.net/geolocation doesn't work anymore)
   #   `-> see https://ipmap.ripe.net/docs/02.api-reference/
   # - add flags: "r" by default to help avoid retrieving too much personal data (and get blocked)
+  # - use the TEST database, but how?  Nothting seems to work and documentation is out of date it seems.
+  #
+  # GRS=Global Resource Service, one of: RIPE, RADb, APNIC, ARIN, AfriNIC, LACNIC
 
-  # Helpers
+  # [[ HELPERS ]]
 
   defp collect_keys_byvalue(map, fun) when is_map(map) do
     # collect keys by value using given `fun`
@@ -42,7 +53,26 @@ defmodule Ripe.API.DB do
     end)
   end
 
-  defp decode(%{http: 200, source: :"Ripe.API.DB.lookup"} = result) do
+  @spec decode(map) :: map
+  defp decode(%{http: 200, source: "Ripe.API.DB.abuse_c"} = result) do
+    # abuse_c doesn't really return an RPSL object
+    data_path = [:body, "abuse-contacts"]
+
+    obj =
+      result
+      |> API.get_at(data_path)
+
+    primary_key =
+      result
+      |> API.get_at([:body, "parameters", "primary-key", "value"])
+
+    result
+    |> Map.merge(obj)
+    |> Map.put(:primary_key, primary_key)
+    |> Map.delete(:body)
+  end
+
+  defp decode(%{http: 200, source: "Ripe.API.DB.lookup"} = result) do
     # lookup returns only one object
     data_path = [:body, "objects", "object", 0]
 
@@ -57,7 +87,7 @@ defmodule Ripe.API.DB do
     |> Map.delete(:body)
   end
 
-  defp decode(%{http: 200, source: :"Ripe.API.DB.search"} = result) do
+  defp decode(%{http: 200, source: "Ripe.API.DB.search"} = result) do
     # search returns one or more objects
     data_path = [:body, "objects", "object"]
 
@@ -70,10 +100,11 @@ defmodule Ripe.API.DB do
 
     result
     |> Map.put(:objects, objects)
+    |> Map.put(:version, API.get_at(result, [:body, "version", "version"]))
     |> Map.delete(:body)
   end
 
-  defp decode(%{http: 200, source: :"Ripe.API.DB.template"} = result) do
+  defp decode(%{http: 200, source: "Ripe.API.DB.template"} = result) do
     # template returns only one object in its own formatt
     data_path = [:body, "templates", "template", 0]
 
@@ -101,44 +132,52 @@ defmodule Ripe.API.DB do
     |> Map.merge(attrs)
   end
 
-  defp decode(%{source: :"Ripe.API.DB.lookup"} = result) do
-    # not a http: 200 -> error
-    reason =
-      result
-      |> API.get_at([:body, "errormessages", "errormessage"])
-      |> Enum.map(fn map -> map["text"] end)
-      |> Enum.join("\n")
-
+  defp decode(%{source: "Ripe.API.DB.abuse_c"} = result) do
+    # not a http: 200 -> error, 301 is redirect with empty body (redirect
+    # contains the error messages)
     result
-    |> Map.put(:erorr, reason)
+    |> API.get_at([:body, "message"])
+    |> then(fn msg -> Map.put(result, :error, msg) end)
     |> Map.delete(:body)
   end
 
-  defp decode(%{source: :"Ripe.API.DB.search"} = result) do
-    # not a http: 200 -> error
-    reason =
-      result
-      |> API.get_at([:body, "errormessages", "errormessage"])
-      |> Enum.map(fn map -> {map["text"], Enum.map(map["args"], fn m -> m["value"] end)} end)
-      |> Enum.map(fn {msg, args} ->
-        Enum.reduce(args, msg, fn val, acc ->
-          String.replace(acc, "%s", "#{val}")
-        end)
-      end)
-      |> Enum.join()
-
+  defp decode(%{source: "Ripe.API.DB.lookup"} = result) do
+    # not a http: 200 -> error, 301 is redirect with empty body (redirect
+    # contains the error messages)
     result
-    |> Map.put(:error, reason)
+    |> Map.put(:error, decode_err(result))
     |> Map.delete(:body)
   end
 
-  defp decode(%{source: :"Ripe.API.DB.template"} = result) do
+  defp decode(%{source: "Ripe.API.DB.search"} = result) do
+    # not a http: 200 -> error
+
+    result
+    |> Map.put(:error, decode_err(result))
+    |> Map.delete(:body)
+  end
+
+  defp decode(%{source: "Ripe.API.DB.template"} = result) do
     # not a http: 200 -> error
     result
     |> Map.put(:error, result[:body]["message"])
     |> Map.delete(:body)
   end
 
+  @spec decode_err(map) :: binary
+  defp decode_err(obj) do
+    obj
+    |> API.get_at([:body, "errormessages", "errormessage"], %{"text" => "unknown error"})
+    |> Enum.map(fn map -> {map["text"], Enum.map(map["args"] || [], fn m -> m["value"] end)} end)
+    |> Enum.map(fn {msg, args} ->
+      Enum.reduce(args, msg, fn val, acc ->
+        String.replace(acc, "%s", "#{val}")
+      end)
+    end)
+    |> Enum.join()
+  end
+
+  @spec decode_obj(map) :: map
   defp decode_obj(obj) do
     # decode a single object
     attrs =
@@ -160,38 +199,156 @@ defmodule Ripe.API.DB do
     |> Map.delete("link")
   end
 
-  # API
+  # [[ API ]]
 
   @doc """
-  Retrieve a single object for given `object`-type and search `keys`.
+  Retrieve [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact)
+  information, if possible, for given `key`.
+
+  where:
+  - `key` is either an ASnr, IP Prefix or an IP address.
+  - `opts` may include a `timeout: N`, where N is the timeout in ms (default 2000).
+
+  Upon success, a map is returned with keys:
+  - `:http`, 200,
+  - `:method`, :get,
+  - `:opts`, options given to the http client
+  - `:primary_key`, primary key for object found,
+  - `:source`, "Ripe.API.DB.abuse_c",
+  - `:url`, the url used to retrieve the information
+  - `"email"`, "some email address",
+  - `"key"`, "nic-handle of role or person",
+  - `"org-id"`,  "nic-handle of organisation",
+  - `"suspect"`, false (or true :)
+
+  Upon failure, a map is returned with keys:
+  - `error:`, "some reason",
+  - `http:`, 400,
+  - `method:`, :get,
+  - `opts:`, options given to the http client
+  - `source:` "Ripe.API.DB.abuse_c",
+  - `url:` "the url that was used"
+
+  Note that even if the call returns successful, there might not be any contact
+  information available (i.e. it doesn't return a 404).
+
+  ## Examples
+
+  Abuse contact for an ASnr:
+
+      iex> abuse_c("AS3333")
+      %{
+        :http => 200,
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :primary_key => "AS3333",
+        :source => "Ripe.API.DB.abuse_c",
+        :url => "https://rest.db.ripe.net/abuse-contact/AS3333.json",
+        "email" => "abuse@ripe.net",
+        "key" => "OPS4-RIPE",
+        "org-id" => "ORG-RIEN1-RIPE",
+        "suspect" => false
+      }
+
+  No contact information found for an IPv4 address, but it does not return a 404.
+
+      iex> abuse_c("1.1.1.1")
+      %{
+        :http => 200,
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :primary_key => "0.0.0.0 - 1.178.111.255",
+        :source => "Ripe.API.DB.abuse_c",
+        :url => "https://rest.db.ripe.net/abuse-contact/1.1.1.1.json",
+        "email" => "",
+        "key" => "",
+        "org-id" => "",
+        "suspect" => false
+      }
+
+  An error due to an invalid `key`.
+
+      iex> abuse_c("1.1.1.x")
+      %{
+        error: "Invalid argument: 1.1.1.x",
+        http: 400,
+        method: :get,
+        opts: [recv_timeout: 2000],
+        source: "Ripe.API.DB.abuse_c",
+        url: "https://rest.db.ripe.net/abuse-contact/1.1.1.x.json"
+      }
+
+  Weirdly enough, using an IPv6 address apparently does yield a 404 when there
+  is nog contract information available.
+
+      iex(339)> Ripe.API.DB.abuse_c("::1.1.1.1")
+      %{
+        error: "No abuse contact found for ::1.1.1.1",
+        http: 404,
+        method: :get,
+        opts: [recv_timeout: 2000],
+        source: "Ripe.API.DB.abuse_c",
+        url: "https://rest.db.ripe.net/abuse-contact/::1.1.1.1.json"
+      }
+  """
+  @spec abuse_c(binary, Keyword.t()) :: map
+  def abuse_c(key, opts \\ []) do
+    # db_lookup = "https://rest.db.ripe.net/ripe"
+    opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+
+    "#{@db_abuse_c}/#{key}.json"
+    |> API.fetch(opts)
+    |> IO.inspect()
+    |> Map.put(:source, "Ripe.API.DB.abuse_c")
+    |> decode()
+  end
+
+  @doc """
+  [lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup)
+  a single object of given `object`-type using given `key` in the RIPE NCC database.
 
   The `object` specifies the name of either a
-  [primary](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html)
+  [primary](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html),
   or a
   [secondary](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/03-Descriptions-of-Secondary-Objects.html)
   object.
 
-  The list of `keys` consists of one or more string values that make up the
-  primary key of the object to retrieve.
+  The `key` is the objects' *primary* key as a binary. Note that some objects,
+  like e.g.
+  [route](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/02-Descriptions-of-Primary-Objects.html#description-of-the-route-object),
+  have multiple attributes listed as a (mandatory) primary key, in which case
+  you'll need to join the strings together in the order as they are listed in
+  the objects' template. So for a route object those attributes are `route`
+  and `origin`, so a key may look like "193.0.0.0/21AS3333".
 
-  The options in `opts` may include
+  `opts` may include
   - `unfiltered: true`, so notify- and email-attributes are not filtered out (default `false`)
-  - `unformatted: true`, in which case the attribute values contain their original formatting.
-  - `:timeout number`, where number defaults to 2000 ms.
+  - `unformatted: true`, in which case the attribute values retain their original formatting.
+  - `timeout: N`, where `N` defaults to 2000 ms.
 
-  See
-  -[Ripe Lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup)
+  When successful, a map is returned with some atom keys provided by this API client, and string
+  keys for the attributes returned by RIPE, like:
 
+  ```elixir
+  %{
+    http: 200,
+    method: :get,
+    opts: [recv_timeout: 2000],
+    query: "193.0.0.0/21AS3333",
+    source: "Ripe.API.DB.lookup",
+    url: "url for the db lookup endpoint",
+    version: "x.y",
+    "some-attr": ["some values"]
+  }
+  ```
+
+  In case of an error, the `http` code will not be `200` and the map will have
+  an error field with some reason.
 
   """
-  def lookup(object, keys, opts \\ []) do
-    # TODO: use "Ripe.API.DB.lookup", no need for it to be an atom
-    # - adjust decode pattern matching accordingly
-    # - "#{@module}.lookup", where @module is "Ripe.API.DB"
-    # - handle 301 redirect (e.g. for AS8075 -> means RIPE-NONAUTH
-    #   the header's "location" will point to a link that contains an error
-    #   message in the body
-    key = Enum.join(keys)
+  @spec lookup(binary, binary, Keyword.t()) :: map
+  def lookup(object, key, opts \\ []) do
+    # db_lookup = "https://rest.db.ripe.net/ripe"
     opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
 
     flags =
@@ -202,13 +359,13 @@ defmodule Ripe.API.DB do
       |> Enum.filter(fn x -> x end)
       |> Enum.join("&")
 
-    "https://rest.db.ripe.net/ripe/#{object}/#{key}.json?#{flags}"
+    "#{@db_lookup}/#{object}/#{key}.json?#{flags}"
     |> String.replace_suffix("?", "")
     |> API.fetch(opts)
     |> IO.inspect()
-    |> Map.put(:source, :"Ripe.API.DB.lookup")
-    |> decode()
+    |> Map.put(:source, "Ripe.API.DB.lookup")
     |> Map.put(:type, object)
+    |> decode()
   end
 
   @doc """
@@ -245,7 +402,7 @@ defmodule Ripe.API.DB do
   Some of the interesting `flags` include:
 
   - `B`, unfiltered
-  - `k`, persistent connectin
+  - `k`, persistent connection
   - `G`, turn grouping off
   - `M`, (all-more) include all more specific matches
   - `m`, (one-more) include 1-level more specific
@@ -272,8 +429,8 @@ defmodule Ripe.API.DB do
 
   """
   def search(query, opts \\ []) do
-    # TODO: URI enocde the url so you can look for "first lastname"
-    db_search = "https://rest.db.ripe.net/search.json?"
+    # TODO: URI encode the url so you can look for "first lastname"
+    # db_search = "https://rest.db.ripe.net/search.json?"
 
     flags =
       opts
@@ -292,9 +449,9 @@ defmodule Ripe.API.DB do
 
     timeout = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
 
-    "#{db_search}#{params}&query-string=#{query}"
+    "#{@db_search}#{params}&query-string=#{query}"
     |> API.fetch(timeout)
-    |> Map.put(:source, :"Ripe.API.DB.search")
+    |> Map.put(:source, "Ripe.API.DB.search")
     |> Map.put(:query, "#{query}")
     |> decode()
   end
@@ -302,23 +459,73 @@ defmodule Ripe.API.DB do
   @doc """
   Retrieve a template for given `object`-type.
 
-  Each template fetched will be decoded into a map and cached.
+  `opts` may include:
+  - `timeout: N`, where N is the desired timeout in ms (default 2000)
+
+  Upon success, a map is returned with keys:
+  - `:http`, 200
+  - `:method`, `:get`
+  - `:opts`, any options given to the http client
+  - `:source`, "Ripe.API.DB.template"
+  - `:url`, the url used
+  - `:type`, the given `object` type
+  - `:rir`, usually "ripe"
+  - `:primary_keys`, list of attribute names that, together, form the primary key
+  - `:lookup_keys`, list of attribute names usable for normal lookup query
+  - `:inverse_keys`, list of attribute names usable for an inverse query
+
+  and a number of binary keys provided by RIPE that are the attribute names, which
+  each point to a map describing the attribute
+  [properties](https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/09-Attribute-Properties.html#attribute-properties)
+
+  ```
+  %{
+    :idx => N,
+    "cardinality" => one of: "SINGLE" | "MULTIPLE",
+    "requirement" => one of: "MANDATORY" | "OPTIONAL" | "REQUIRED" | "GENERATED"
+    "keys" => subset of ["PRIMARY_KEY", "INVERSE_KEY", "LOOKUP_KEY"] (if at all present)
+  }
+  ```
+
+  If an attribute is not (part of) a primary key and is not in the lookup- nor
+  the inverse index then "keys" will not be present in the attribute map.  Note
+  that the template's map already has keys that list the attribute names used
+  for a primary key, a regular lookup key or as an inverse lookup key.
+
+  Since the order in which attributes are listed in a template is imported, the
+  value under key `:idx` specifies it was the `nth` attribute seen.
+
+  In case of an error, a map is returned with keys:
+  - `:http`, usually 404
+  - `:error`, with some message
+  - `:method`, `:get`
+  - `:opts`, any options given to the http client
+  - `:source`, "Ripe.API.DB.template"
+  - `:type`, the given object type (which was not found)
+  - `:url`, the url used
 
   See:
-  - [Ripe Template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template)
-  - https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/01-Database-Object.html
+  - [Attribute properties](https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/09-Attribute-Properties.html#attribute-properties)
   - [RPSL object types](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/)
+  - [Ripe Template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template)
+  - [Ripe Db Objects](https://apps.db.ripe.net/docs/03.RIPE-Database-Structure/01-Database-Object.html)
 
   Notes:
   - attribute names consist of alphanumeric characters plus hyphens
   - attributes names are case-insensitive, RIPE DB converts them to lowercase
-  """
-  def template(object) do
-    db_template = "https://rest.db.ripe.net/metadata/templates"
+  - the order of attributes listed in primary keys is important and determines
+    how the attribute values (binaries) are joined to form the primary key for
+    a search or lookup.
 
-    "#{db_template}/#{object}.json"
-    |> API.fetch()
-    |> Map.put(:source, :"Ripe.API.DB.template")
+  """
+  def template(object, opts \\ []) do
+    # @db_template -> "https://rest.db.ripe.net/metadata/templates"
+
+    timeout = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+
+    "#{@db_template}/#{object}.json"
+    |> API.fetch(timeout)
+    |> Map.put(:source, "Ripe.API.DB.template")
     |> Map.put(:type, "#{object}")
     |> decode()
   end

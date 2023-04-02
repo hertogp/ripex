@@ -2,18 +2,23 @@ defmodule Ripe.API do
   @moduledoc """
   Utility functions to be used by all endpoints across all RIPE API's.
 
+  Since all RIPE queries are fully encoded in the url, `Ripe.API.Cache`
+  is used in order to prevent hammering Ripe unnecessarily.
+
   """
 
   use Tesla, only: [:get], docs: false
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
+  plug(Tesla.Middleware.FollowRedirects, max_redirects: 3)
   plug(Tesla.Middleware.JSON)
+
+  alias Ripe.API.Cache
 
   # Helpers
 
   @spec decode(Tesla.Env.result()) :: map
   defp decode({:ok, env}) do
-    # TODO: anything else than http 200 (e.g. a 301) should be treated as an
-    # error
+    # Note: no env.headers since we're following redirects.
     %{
       url: env.url,
       http: env.status,
@@ -29,17 +34,21 @@ defmodule Ripe.API do
   # API
 
   @doc """
-  Returns a map contained the decoded response from Ripe based on url.
+  Returns a map containing the decoded response from Ripe based on given `url`.
 
-  In case of a succesful `t:Tesla.Env.result/0`, the map contains atom keys:
+  In case of a successful `t:Tesla.Env.result/0`, the map contains atom keys:
   - `:url`, the url visited
-  - `:http`, the https status of the call, (-1 if another error occurred)
+  - `:http`, the https status of the call, (-1 if an error occurred)
   - `:body`, the body of the result
   - `:method`, http method used, usually jus `:get`
   - `opts`, any options passed to Tesla (like recv_timeout)
 
   Note that this might still mean that the endpoint had problems returning
   any usefull data.
+
+  In case of any errors, the map contains:
+  - `:http`, which is given the value of `-1`
+  - `:error`, with some message
 
   Note:
   - specify a timeout via: `[opts: [recv_timeout: 10_000]]`
@@ -48,33 +57,44 @@ defmodule Ripe.API do
   """
   @spec fetch(binary, Keyword.t()) :: map
   def fetch(url, opts \\ []) do
-    # Specify a timeout using: [opts: [recv_timeout: 10_000]]
     # See https://hexdocs.pm/tesla/Tesla.Env.html#content
-    url
-    |> get(opts)
-    |> IO.inspect(label: :api_fetch)
+    # Once all API endpoints are stable, we'll cache the decode result
+    # instead of the raw response.
+    # TODO: add force: true to opts to ignore the cache.
+
+    case Cache.get(url) do
+      nil ->
+        url
+        |> get(opts)
+        |> Cache.put(url)
+
+      data ->
+        data
+    end
     |> decode()
   end
 
-  @spec get_at(map | list, [atom | binary | number]) :: any
-  def get_at(data, []),
+  @spec get_at(map | list, [atom | binary | number], any) :: any
+  def get_at(data, keys, default \\ nil)
+
+  def get_at(data, [], _default),
     do: data
 
-  def get_at(nil, _),
-    do: nil
-
-  def get_at(data, [key | tail]) when is_map(data) do
+  def get_at(data, [key | tail], default) when is_map(data) do
     data
     |> Map.get(key, nil)
-    |> get_at(tail)
+    |> get_at(tail, default)
   end
 
-  def get_at(data, [key | tail]) when is_list(data) do
+  def get_at(data, [key | tail], default) when is_list(data) do
     data
     |> List.pop_at(key)
     |> elem(0)
-    |> get_at(tail)
+    |> get_at(tail, default)
   end
+
+  def get_at(_, _, default),
+    do: default
 
   @doc """
   Given a map, promote values that consist of a single given `key` => value.
