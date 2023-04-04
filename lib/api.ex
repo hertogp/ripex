@@ -57,10 +57,9 @@ defmodule Ripe.API do
   """
   @spec fetch(binary, Keyword.t()) :: map
   def fetch(url, opts \\ []) do
-    # See https://hexdocs.pm/tesla/Tesla.Env.html#content
-    # Once all API endpoints are stable, we'll cache the decode result
-    # instead of the raw response.
-    # TODO: add force: true to opts to ignore the cache.
+    # Note:
+    # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
+    # - in case of a timeout, decode cannot add the url, so add it here.
 
     case Cache.get(url) do
       nil ->
@@ -72,29 +71,8 @@ defmodule Ripe.API do
         data
     end
     |> decode()
+    |> Map.put(:url, url)
   end
-
-  @spec get_at(map | list, [atom | binary | number], any) :: any
-  def get_at(data, keys, default \\ nil)
-
-  def get_at(data, [], _default),
-    do: data
-
-  def get_at(data, [key | tail], default) when is_map(data) do
-    data
-    |> Map.get(key, nil)
-    |> get_at(tail, default)
-  end
-
-  def get_at(data, [key | tail], default) when is_list(data) do
-    data
-    |> List.pop_at(key)
-    |> elem(0)
-    |> get_at(tail, default)
-  end
-
-  def get_at(_, _, default),
-    do: default
 
   @doc """
   Given a map, promote values that consist of a single given `key` => value.

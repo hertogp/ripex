@@ -35,12 +35,14 @@ defmodule Ripe.API.DB do
 
   # [[ HELPERS ]]
 
+  @spec collect_keys_byvalue(map, fun()) :: [binary]
   defp collect_keys_byvalue(map, fun) when is_map(map) do
-    # collect keys by value using given `fun`
+    # collect keys by value using given `fun` and sort keys on idx field if any
     for {k, m} <- map, fun.(m), into: [] do
-      k
+      {m[:idx], k}
     end
-    |> Enum.filter(fn k -> k end)
+    |> Enum.sort()
+    |> Enum.map(fn {_, k} -> k end)
   end
 
   defp collect_values_bykey(list, key, valkey) when is_list(list) do
@@ -56,15 +58,9 @@ defmodule Ripe.API.DB do
   @spec decode(map) :: map
   defp decode(%{http: 200, source: "Ripe.API.DB.abuse_c"} = result) do
     # abuse_c doesn't really return an RPSL object
-    data_path = [:body, "abuse-contacts"]
 
-    obj =
-      result
-      |> API.get_at(data_path)
-
-    primary_key =
-      result
-      |> API.get_at([:body, "parameters", "primary-key", "value"])
+    obj = result[:body]["abuse-contacts"]
+    primary_key = result[:body]["parameters"]["primary-key"]["value"]
 
     result
     |> Map.merge(obj)
@@ -74,60 +70,64 @@ defmodule Ripe.API.DB do
 
   defp decode(%{http: 200, source: "Ripe.API.DB.lookup"} = result) do
     # lookup returns only one object
-    data_path = [:body, "objects", "object", 0]
 
     obj =
-      result
-      |> API.get_at(data_path)
+      result[:body]["objects"]["object"]
+      |> hd()
       |> decode_obj()
 
+    version = result[:body]["version"]["version"]
+
     result
-    |> Map.put(:version, API.get_at(result, [:body, "version", "version"]))
+    |> Map.put(:version, version)
     |> Map.merge(obj)
     |> Map.delete(:body)
   end
 
   defp decode(%{http: 200, source: "Ripe.API.DB.search"} = result) do
     # search returns one or more objects
-    data_path = [:body, "objects", "object"]
 
     objects =
-      result
-      |> API.get_at(data_path)
-      |> Enum.reduce([], fn obj, acc -> [decode_obj(obj) | acc] end)
-      |> IO.inspect(label: :objects)
-      |> Enum.reverse()
+      result[:body]["objects"]["object"]
+      |> Enum.map(&decode_obj/1)
+
+    version = result[:body]["version"]["version"]
 
     result
     |> Map.put(:objects, objects)
-    |> Map.put(:version, API.get_at(result, [:body, "version", "version"]))
+    |> Map.put(:version, version)
     |> Map.delete(:body)
   end
 
   defp decode(%{http: 200, source: "Ripe.API.DB.template"} = result) do
     # template returns only one object in its own formatt
-    data_path = [:body, "templates", "template", 0]
+
+    data = result[:body]["templates"]["template"] |> hd()
 
     attrs =
-      result
-      |> API.get_at(data_path ++ ["attributes", "attribute"])
+      data["attributes"]["attribute"]
       |> API.map_bykey("name")
 
+    p_keys =
+      attrs
+      |> collect_keys_byvalue(fn m -> "PRIMARY_KEY" in Map.get(m, "keys", []) end)
+
+    l_keys =
+      attrs
+      |> collect_keys_byvalue(fn m -> "LOOKUP_KEY" in Map.get(m, "keys", []) end)
+
+    i_keys =
+      attrs
+      |> collect_keys_byvalue(fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
+
+    IO.inspect(p_keys, label: :p_keys)
+
     result
-    |> Map.put(:rir, API.get_at(result, data_path ++ ["source"])["id"])
-    |> Map.put(:type, API.get_at(result, data_path ++ ["type"]))
-    |> Map.put(
-      :primary_keys,
-      collect_keys_byvalue(attrs, fn m -> "PRIMARY_KEY" in Map.get(m, "keys", []) end)
-    )
-    |> Map.put(
-      :inverse_keys,
-      collect_keys_byvalue(attrs, fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
-    )
-    |> Map.put(
-      :lookup_keys,
-      collect_keys_byvalue(attrs, fn m -> "LOOKUP_KEY" in Map.get(m, "keys", []) end)
-    )
+    |> Map.put(:rir, data["source"]["id"])
+    |> Map.put(:type, data["type"])
+    |> Map.put(:primary_keys, p_keys)
+    |> Map.put(:inverse_keys, i_keys)
+    |> Map.put(:lookup_keys, l_keys)
     |> Map.delete(:body)
     |> Map.merge(attrs)
   end
@@ -135,8 +135,7 @@ defmodule Ripe.API.DB do
   defp decode(%{source: "Ripe.API.DB.abuse_c"} = result) do
     # not a http: 200 -> error, 301 is redirect with empty body (redirect
     # contains the error messages)
-    result
-    |> API.get_at([:body, "message"])
+    result[:body]["message"]
     |> then(fn msg -> Map.put(result, :error, msg) end)
     |> Map.delete(:body)
   end
@@ -166,8 +165,9 @@ defmodule Ripe.API.DB do
 
   @spec decode_err(map) :: binary
   defp decode_err(obj) do
-    obj
-    |> API.get_at([:body, "errormessages", "errormessage"], %{"text" => "unknown error"})
+    (obj[:body]["errormessages"]["errormessage"] ||
+       [%{"text" => "unknown error"}])
+    |> IO.inspect(label: :obj_err)
     |> Enum.map(fn map -> {map["text"], Enum.map(map["args"] || [], fn m -> m["value"] end)} end)
     |> Enum.map(fn {msg, args} ->
       Enum.reduce(args, msg, fn val, acc ->
@@ -181,14 +181,12 @@ defmodule Ripe.API.DB do
   defp decode_obj(obj) do
     # decode a single object
     attrs =
-      obj
+      obj["attributes"]["attribute"]
       |> IO.inspect(label: :object)
-      |> API.get_at(["attributes", "attribute"])
       |> collect_values_bykey("name", "value")
 
     primary_key =
-      obj
-      |> API.get_at(["primary-key", "attribute"])
+      obj["primary-key"]["attribute"]
       |> Enum.reduce("", fn m, acc -> acc <> m["value"] end)
 
     obj
@@ -279,7 +277,7 @@ defmodule Ripe.API.DB do
       }
 
   Weirdly enough, using an IPv6 address apparently does yield a 404 when there
-  is nog contract information available.
+  is no contact information available.
 
       iex(339)> Ripe.API.DB.abuse_c("::1.1.1.1")
       %{
@@ -327,23 +325,44 @@ defmodule Ripe.API.DB do
   - `timeout: N`, where `N` defaults to 2000 ms.
 
   When successful, a map is returned with some atom keys provided by this API client, and string
-  keys for the attributes returned by RIPE, like:
+  keys for the attributes returned by RIPE.
 
-  ```elixir
-  %{
-    http: 200,
-    method: :get,
-    opts: [recv_timeout: 2000],
-    query: "193.0.0.0/21AS3333",
-    source: "Ripe.API.DB.lookup",
-    url: "url for the db lookup endpoint",
-    version: "x.y",
-    "some-attr": ["some values"]
-  }
-  ```
+  ## Examples
 
-  In case of an error, the `http` code will not be `200` and the map will have
-  an error field with some reason.
+  A RIPE route object:
+
+      iex> lookup("route", "193.0.0.0/21AS3333", timeout: 5000)
+      %{
+        :http => 200,
+        :method => :get,
+        :opts => [recv_timeout: 5000],
+        :primary_key => "193.0.0.0/21AS3333",
+        :source => "Ripe.API.DB.lookup",
+        :type => "route",
+        :url => "https://rest.db.ripe.net/ripe/route/193.0.0.0/21AS3333.json",
+        :version => "1.106",
+        "created" => ["1970-01-01T00:00:00Z"],
+        "descr" => ["RIPE-NCC"],
+        "last-modified" => ["2008-09-10T14:27:53Z"],
+        "mnt-by" => ["RIPE-NCC-MNT"],
+        "origin" => ["AS3333"],
+        "route" => ["193.0.0.0/21"],
+        "source" => ["RIPE"],
+        "type" => "route"
+      }
+
+  No results found due to missing ASnr in the primary key used:
+
+      iex> lookup("route", "193.0.0.0/21")
+      %{
+        error: "ERROR:101: no entries found\\n\\nNo entries found in source RIPE.\\n",
+        http: 404,
+        method: :get,
+        opts: [recv_timeout: 2000],
+        source: "Ripe.API.DB.lookup",
+        type: "route",
+        url: "https://rest.db.ripe.net/ripe/route/193.0.0.0/21.json"
+      }
 
   """
   @spec lookup(binary, binary, Keyword.t()) :: map
@@ -427,7 +446,77 @@ defmodule Ripe.API.DB do
   - `search("RIPE-NCC-MNT", "inverse-attribute": "mnt-by", "type-filter": ["inetnum", "inet6num"], flags: "r")`
     - find all inet(6)num's maintained by RIPE-NCC-MNT, without additional contact information
 
+  Search for a route object given a certain prefix.
+
+      iex>  Ripe.API.DB.search("193.0.0.0/21", flags: "r", "type-filter": "route")
+      %{
+        http: 200,
+        method: :get,
+        objects: [
+          %{
+            :primary_key => "193.0.0.0/21AS3333",
+            "created" => ["1970-01-01T00:00:00Z"],
+            "descr" => ["RIPE-NCC"],
+            "last-modified" => ["2008-09-10T14:27:53Z"],
+            "mnt-by" => ["RIPE-NCC-MNT"],
+            "origin" => ["AS3333"],
+            "route" => ["193.0.0.0/21"],
+            "source" => ["RIPE"],
+            "type" => "route"
+          }
+        ],
+        opts: [recv_timeout: 2000],
+        query: "193.0.0.0/21",
+        source: "Ripe.API.DB.search",
+        url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route&query-string=193.0.0.0/21",
+        version: "1.106"
+      }
+
+    Find both the inetnum and route objects.
+
+      iex> Ripe.API.DB.search("193.0.0.0/21", flags: "r", "type-filter": "route,inetnum")
+      %{
+        http: 200,
+        method: :get,
+        objects: [
+          %{
+            :primary_key => "193.0.0.0 - 193.0.7.255",
+            "admin-c" => ["BRD-RIPE"],
+            "country" => ["NL"],
+            "created" => ["2003-03-17T12:15:57Z"],
+            "descr" => ["RIPE Network Coordination Centre", "Amsterdam, Netherlands"],
+            "inetnum" => ["193.0.0.0 - 193.0.7.255"],
+            "last-modified" => ["2017-12-04T14:42:31Z"],
+            "mnt-by" => ["RIPE-NCC-MNT"],
+            "netname" => ["RIPE-NCC"],
+            "org" => ["ORG-RIEN1-RIPE"],
+            "remarks" => ["Used for RIPE NCC infrastructure."],
+            "source" => ["RIPE"],
+            "status" => ["ASSIGNED PA"],
+            "tech-c" => ["OPS4-RIPE"],
+            "type" => "inetnum"
+          },
+          %{
+            :primary_key => "193.0.0.0/21AS3333",
+            "created" => ["1970-01-01T00:00:00Z"],
+            "descr" => ["RIPE-NCC"],
+            "last-modified" => ["2008-09-10T14:27:53Z"],
+            "mnt-by" => ["RIPE-NCC-MNT"],
+            "origin" => ["AS3333"],
+            "route" => ["193.0.0.0/21"],
+            "source" => ["RIPE"],
+            "type" => "route"
+          }
+        ],
+        opts: [recv_timeout: 2000],
+        query: "193.0.0.0/21",
+        source: "Ripe.API.DB.search",
+        url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route,inetnum&query-string=193.0.0.0/21",
+        version: "1.106"
+      }
+
   """
+  @spec search(binary, Keyword.t()) :: map
   def search(query, opts \\ []) do
     # TODO: URI encode the url so you can look for "first lastname"
     # db_search = "https://rest.db.ripe.net/search.json?"
@@ -492,7 +581,7 @@ defmodule Ripe.API.DB do
   that the template's map already has keys that list the attribute names used
   for a primary key, a regular lookup key or as an inverse lookup key.
 
-  Since the order in which attributes are listed in a template is imported, the
+  Since the order in which attributes are listed in a template is important, the
   value under key `:idx` specifies it was the `nth` attribute seen.
 
   In case of an error, a map is returned with keys:
@@ -517,7 +606,106 @@ defmodule Ripe.API.DB do
     how the attribute values (binaries) are joined to form the primary key for
     a search or lookup.
 
+  ## Example
+
+      iex> template("domain")
+      %{
+        :http => 200,
+        :inverse_keys => ["org", "admin-c", "tech-c", "zone-c", "nserver",
+          "ds-rdata", "notify", "mnt-by"],
+        :lookup_keys => ["domain"],
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :primary_keys => ["domain"],
+        :rir => "ripe",
+        :source => "Ripe.API.DB.template",
+        :type => "domain",
+        :url => "https://rest.db.ripe.net/metadata/templates/domain.json",
+        "admin-c" => %{
+          :idx => 3,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "MANDATORY"
+        },
+        "created" => %{
+          :idx => 11,
+          "cardinality" => "SINGLE",
+          "requirement" => "GENERATED"
+        },
+        "descr" => %{
+          :idx => 1,
+          "cardinality" => "MULTIPLE",
+          "requirement" => "OPTIONAL"
+        },
+        "domain" => %{
+          :idx => 0,
+          "cardinality" => "SINGLE",
+          "keys" => ["PRIMARY_KEY", "LOOKUP_KEY"],
+          "requirement" => "MANDATORY"
+        },
+        "ds-rdata" => %{
+          :idx => 7,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "OPTIONAL"
+        },
+        "last-modified" => %{
+          :idx => 12,
+          "cardinality" => "SINGLE",
+          "requirement" => "GENERATED"
+        },
+        "mnt-by" => %{
+          :idx => 10,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "MANDATORY"
+        },
+        "notify" => %{
+          :idx => 9,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "OPTIONAL"
+        },
+        "nserver" => %{
+          :idx => 6,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "MANDATORY"
+        },
+        "org" => %{
+          :idx => 2,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "OPTIONAL"
+        },
+        "remarks" => %{
+          :idx => 8,
+          "cardinality" => "MULTIPLE",
+          "requirement" => "OPTIONAL"
+        },
+        "source" => %{
+          :idx => 13,
+          "cardinality" => "SINGLE",
+          "requirement" => "MANDATORY"
+        },
+        "tech-c" => %{
+          :idx => 4,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "MANDATORY"
+        },
+        "zone-c" => %{
+          :idx => 5,
+          "cardinality" => "MULTIPLE",
+          "keys" => ["INVERSE_KEY"],
+          "requirement" => "MANDATORY"
+        }
+      }
+
+
+
   """
+  @spec template(binary, Keyword.t()) :: map
   def template(object, opts \\ []) do
     # @db_template -> "https://rest.db.ripe.net/metadata/templates"
 
