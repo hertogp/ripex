@@ -167,12 +167,13 @@ defmodule Ripe.API.Stat do
   @doc """
   Retrieve information from a given RIPEstat `endpoint`, possibly decoding its results.
 
+  The `endpoint` parameter should correspond to a valid endpoint listed at the
+  [RIPEstat API](https://stat.ripe.net/docs/02.data-api/), while
   `params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
 
-  Note that this list may include a `Ripe.API.Stat`-specific `timeout: N`
-  option to wait N milliseconds instead of the default 2000 ms.  This is
-  dropped from params, which then should list the parameters and their values
-  to use for given `endpoint`.
+  Optionally, `params` may include a Ripex-specific `timeout: N` option to wait
+  N milliseconds instead of the default 2000 ms.  This is dropped from `params`,
+  before forming the url to visit.
 
   In case of success, the result is a map with atom keys that include:
   - `http:` - the http return code
@@ -180,8 +181,58 @@ defmodule Ripe.API.Stat do
   - `opts` - options passed on to the http client
   - `source` - "Ripe.API.Stat." <> endpoint
 
-  and binary keys that come from the data returned by the API endpoint,
-  which will be different across the endpoints.
+  and some binary keys that are lifted from the repsonse's `:body` into the outer map:
+  - "version" - which lists the endpoint's version
+  - "call_name" - which originally was called "data_call_name"
+  - "call_status" - which originally was call "data_call_name" and is limited to its first word.
+  - "status" - status of the call's result
+  - "messages" - which may indicate additional info and/or error messages
+  - "data" - which is the actual endpoint data returned.
+
+  In case of success, some endpoints will have the "data" decoded further.
+  There are *a lot* of endpoints, so for most endpoints the caller needs to
+  decode the "data" field herself.
+
+  In case of an error, an `:error` field is added which is all the lines in
+  "messages" field joined by a newline and no further decoding takes place.
+
+  ## Examples
+
+  As an example of an endpoint that whose "data" field is not decoded:
+
+      iex> fetch("rir", resource: "94.198.159.35")
+      ...> |> put_in(["data", "latest"], "...")
+      ...> |> put_in(["data", "query_endtime"], "...")
+      ...> |> put_in(["data", "query_starttime"], "...")
+      ...> |> put_in(["data", "rirs", Access.at(0), "first_time"], "...")
+      ...> |> put_in(["data", "rirs", Access.at(0), "last_time"], "...")
+      %{
+        :http => 200,
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :source => "Ripe.API.Stat.rir",
+        :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=94.198.159.35",
+        "call_name" => "rir",
+        "call_status" => "supported",
+        "data" => %{
+          "latest" => "...",
+          "lod" => 1,
+          "query_endtime" => "...",
+          "query_starttime" => "...",
+          "resource" => "94.198.159.35/32",
+          "rirs" => [
+            %{
+              "first_time" => "...",
+              "last_time" => "...",
+              "rir" => "RIPE NCC"
+            }
+          ]
+        },
+        "messages" => %{"info" => "IP address has been converted to a prefix"},
+        "status" => "ok",
+        "version" => "0.1"
+      }
+
 
   ## [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
 
@@ -228,7 +279,7 @@ defmodule Ripe.API.Stat do
     endpoint
     |> url(params)
     |> API.fetch(timeout)
-    |> IO.inspect()
+    # |> IO.inspect()
     |> Map.put(:source, "Ripe.API.Stat.#{endpoint}")
     |> API.move_keyup("version")
     |> API.move_keyup("data_call_name", rename: "call_name")

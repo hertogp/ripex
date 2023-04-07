@@ -120,7 +120,7 @@ defmodule Ripe.API.DB do
       attrs
       |> collect_keys_byvalue(fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
 
-    IO.inspect(p_keys, label: :p_keys)
+    # IO.inspect(p_keys, label: :p_keys)
 
     result
     |> Map.put(:rir, data["source"]["id"])
@@ -167,7 +167,7 @@ defmodule Ripe.API.DB do
   defp decode_err(obj) do
     (obj[:body]["errormessages"]["errormessage"] ||
        [%{"text" => "unknown error"}])
-    |> IO.inspect(label: :obj_err)
+    # |> IO.inspect(label: :obj_err)
     |> Enum.map(fn map -> {map["text"], Enum.map(map["args"] || [], fn m -> m["value"] end)} end)
     |> Enum.map(fn {msg, args} ->
       Enum.reduce(args, msg, fn val, acc ->
@@ -182,7 +182,7 @@ defmodule Ripe.API.DB do
     # decode a single object
     attrs =
       obj["attributes"]["attribute"]
-      |> IO.inspect(label: :object)
+      # |> IO.inspect(label: :object)
       |> collect_values_bykey("name", "value")
 
     primary_key =
@@ -296,7 +296,7 @@ defmodule Ripe.API.DB do
 
     "#{@db_abuse_c}/#{key}.json"
     |> API.fetch(opts)
-    |> IO.inspect()
+    # |> IO.inspect()
     |> Map.put(:source, "Ripe.API.DB.abuse_c")
     |> decode()
   end
@@ -381,7 +381,7 @@ defmodule Ripe.API.DB do
     "#{@db_lookup}/#{object}/#{key}.json?#{flags}"
     |> String.replace_suffix("?", "")
     |> API.fetch(opts)
-    |> IO.inspect()
+    # |> IO.inspect()
     |> Map.put(:source, "Ripe.API.DB.lookup")
     |> Map.put(:type, object)
     |> decode()
