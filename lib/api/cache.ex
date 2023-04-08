@@ -28,14 +28,15 @@ defmodule Ripe.API.Cache do
 
   ## Example
 
+      iex> read("ripe-api-cache.ets")
+      iex> :ets.info(Ripe.API.Cache)
+      ...> |> Keyword.get(:size)
+      2
       iex> clear()
-      :ok
       iex> :ets.info(Ripe.API.Cache)
       ...> |> Keyword.get(:size)
       0
-      # restore cache for this test module
-      iex> read("ripe-api-cache.ets")
-      :ok
+
   """
   @spec clear() :: :ok
   def clear() do
@@ -44,7 +45,7 @@ defmodule Ripe.API.Cache do
   end
 
   @doc """
-  Delete an entry under given `url` from the cache.
+  Deletes the entry under given `url` from the cache.
 
   Returns `:ok`, even if the entry does not exist.
 
@@ -97,15 +98,15 @@ defmodule Ripe.API.Cache do
   end
 
   @doc """
-  Returns the cached result for given `url` or nil if the entry is older than
-  given `ttl` in seconds.
+  Returns the cached result for given `url` or nil if the entry doesn't exist
+  or is older than given `ttl` in seconds.
 
-  `nil` is also returned if there is no such entry. And the ttl is measured in seconds.
+  If the entry is too old, `nil` is returned but the entry is not deleted.
 
   ## Example
 
       iex> read("ripe-api-cache.ets")
-      iex> get("https://discography?query=acdc&title=TNT", 10)
+      iex> get("https://discography?query=acdc&title=TNT", 1)
       ["acdc", "TNT", 1975]
       iex> get("https://discography?query=acdc&title=TNT", -1)
       nil
@@ -129,10 +130,10 @@ defmodule Ripe.API.Cache do
   end
 
   @doc """
-  Put given `data` under given `url` in the cache, returns the data.
+  Puts given `data` under given `url` in the cache, returns `data`.
 
   The entry is stored as `{url, data, timestamp}`, where `timestamp` is the
-  current monotonic time in seconds.
+  system's current monotonic time in seconds.
 
   ## Example
 
@@ -160,9 +161,9 @@ defmodule Ripe.API.Cache do
   @doc """
   Clears the cache, then tries to load entries from given `filename`.
 
-  Given `filename` is looked for in the private directory, so do not
-  use a filepath.  If the file does not exist an `:error` is returned
-  and the cache will have been cleared.
+  Given `filename` is relative to `:ripex`'s private directory.
+  If the file does not exist an `:error` is returned and the cache will have
+  been cleared.
 
   Note that any entries created will have the timestamp of the moment
   of creating the entries, i.e. their timestamps are refreshed.
@@ -216,7 +217,7 @@ defmodule Ripe.API.Cache do
   end
 
   @doc """
-  Create the #{__MODULE__} if it doesn't exist already.
+  Creates the #{__MODULE__} if it doesn't exist already.
 
   """
   @spec start() :: {:ok, atom} | {:error, :already_started}

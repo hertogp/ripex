@@ -1,20 +1,38 @@
 defmodule Ripe.API.DB do
   @moduledoc """
-  This module implements some of the [RESTful
-    API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s
-  of the [RIPE NCC database](https://apps.db.ripe.net/docs/) to retrieve its
-  [objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types).
+  Functions to retrieve
+  [objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types)
+  from some of the
+  [RIPE NCC database](https://apps.db.ripe.net/docs/)'s
+  [RESTful API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s.
 
-
+  They include:
   - [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact),
-    retrieve abuse contact information if available.
+    retrieves abuse contact information if available.
   - [lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup),
-    retrieve a single object form the RIPE database.
+    retrieves a single object form the RIPE database.
   - [search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search),
-    retrieve one or more objects from the RIPE database
+    retrieves one or more objects from the RIPE database
   - [template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template),
-    retrieve a single template for a specified object type..
+    retrieves a single template for a specified object type..
 
+  Note that the
+  [Fair Use Policy](https://www.ripe.net/manage-ips-and-asns/db/support/documentation/ripe-database-acceptable-use-policy),
+  includes some limits:
+  - unlimited number of queries for a given IP address, as long as you do not disrupt the service
+  - max 1000 personal data-sets per 24 hours (see `search/2` and the `flags: "r"`)
+  - max 3 simultaneous connections per IP address
+
+  and it is easy to accidently violate the maximum on personal data-sets when searching the database.
+  So beware.
+
+  All functions support an optional `timeout N` parameter, since some queries may take longer than 2 seconds
+  (the default) to complete.
+
+  The documentation of the
+  [RESTful API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s
+  is sometimes a bit outdated.  The geolocation API doesn't seem to work and an alternative seems to live at
+  [ipmap.ripe.net](https://ipmap.ripe.net/docs/02.api-reference/)
   """
 
   alias Ripe.API
@@ -25,7 +43,6 @@ defmodule Ripe.API.DB do
   @db_search "https://rest.db.ripe.net/search.json?"
 
   # [[ TODO: ]]
-  # - add https://rest.db.ripe.net/abuse-contact/{resource}
   # - add subAPI https://ipmap.ripe.net/ (since rest.db.ripe.net/geolocation doesn't work anymore)
   #   `-> see https://ipmap.ripe.net/docs/02.api-reference/
   # - add flags: "r" by default to help avoid retrieving too much personal data (and get blocked)
@@ -120,7 +137,7 @@ defmodule Ripe.API.DB do
       attrs
       |> collect_keys_byvalue(fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
 
-   # IO.inspect(p_keys, label: :p_keys)
+    # IO.inspect(p_keys, label: :p_keys)
 
     result
     |> Map.put(:rir, data["source"]["id"])
@@ -200,7 +217,7 @@ defmodule Ripe.API.DB do
   # [[ API ]]
 
   @doc """
-  Retrieve [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact)
+  Retrieves [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact)
   information, if possible, for given `key`.
 
   where:
@@ -388,7 +405,7 @@ defmodule Ripe.API.DB do
   end
 
   @doc """
-  Retrieve one or more objects via [Ripe
+  Retrieves one or more objects via [Ripe
   Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
 
   The `query` parameter specifies the string value to search for.  By default this will find objects
@@ -546,7 +563,7 @@ defmodule Ripe.API.DB do
   end
 
   @doc """
-  Retrieve a template for given `object`-type.
+  Retrieves a template for given `object`-type.
 
   `opts` may include:
   - `timeout: N`, where N is the desired timeout in ms (default 2000)

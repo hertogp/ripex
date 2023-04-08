@@ -13,7 +13,7 @@ defmodule Ripe.API.Stat do
   the result to a map (also in case of errors).
 
   For some of the endpoints, the results are decoded in order to have a more
-  managaable datastructure.  These include:
+  manageable datastructure.  These include:
 
   - [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
   - [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
@@ -25,8 +25,8 @@ defmodule Ripe.API.Stat do
 
   Other endpoints will simply yield the json decoded results.
 
-  Other functions are basically convenience functions that combine the results
-  of two or more endpoints, like `rpki/2`.
+  The `rpki/2` function was added as a convenience and it combines the results two
+  endpoints,
 
 
   """
@@ -200,8 +200,8 @@ defmodule Ripe.API.Stat do
   ## Examples
 
   The [rir](https://stat.ripe.net/docs/02.data-api/rir.html#rir) endpoint takes a
-  an ip prefix/address as a resource and optionally starttime/endtime/lod (level of detail).
-  Its `data` field is not decoded.
+  an ip prefix/address as a `resource` and optionally a `starttime`, `endtime`
+  and `lod` (level of detail). Its `data` field is not decoded.
 
       iex> fetch("rir", resource: "94.198.159.35")
       %{
