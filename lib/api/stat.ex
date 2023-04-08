@@ -213,12 +213,12 @@ defmodule Ripe.API.Stat do
         "call_name" => "rir",
         "call_status" => "supported",
         "data" => %{
-          "latest" => "2023-04-05T00:00:00",
+          "latest" => "2023-04-07T00:00:00",
           "lod" => 1,
-          "query_endtime" => "2023-04-05T00:00:00",
-          "query_starttime" => "2023-04-05T00:00:00",
+          "query_endtime" => "2023-04-07T00:00:00",
+          "query_starttime" => "2023-04-07T00:00:00",
           "resource" => "94.198.159.35/32",
-          "rirs" => [%{"first_time" => "2023-04-05T00:00:00", "last_time" => "2023-04-05T00:00:00", "rir" => "RIPE NCC"}]
+          "rirs" => [%{"first_time" => "2023-04-07T00:00:00", "last_time" => "2023-04-07T00:00:00", "rir" => "RIPE NCC"}]
         },
         "messages" => %{"info" => "IP address has been converted to a prefix"},
         "status" => "ok",

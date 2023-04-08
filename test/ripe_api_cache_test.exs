@@ -5,14 +5,17 @@ defmodule Ripe.API.CacheTest do
   @filename "ripe-api-cache.ets"
 
   setup_all do
-    Ripe.API.Cache.read(@filename)
+    Ripe.API.Cache.clear()
 
-    # ensure some entries
-    ["acdc", "T.N.T", 1975]
-    |> Ripe.API.Cache.put("https://discography?query=acdc&year=1975&month=dec")
+    # ensure some entries, donot save cache afterwards
+    ["acdc", "TNT", 1975]
+    |> Ripe.API.Cache.put("https://discography?query=acdc&title=TNT")
 
-    on_exit(fn ->
-      Ripe.API.Cache.save(@filename)
-    end)
+    ["acdc", "High Voltage", 1975]
+    |> Ripe.API.Cache.put("https://discography?query=acdc&title=HighVoltage")
+
+    Ripe.API.Cache.save(@filename)
+
+    :ok
   end
 end
