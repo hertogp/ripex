@@ -13,7 +13,7 @@ defmodule Ripe.API.Stat do
   the result to a map (also in case of errors).
 
   For some of the endpoints, the results are decoded in order to have a more
-  managable datastructure.  These include:
+  managaable datastructure.  These include:
 
   - [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
   - [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
@@ -171,6 +171,7 @@ defmodule Ripe.API.Stat do
   [RIPEstat API](https://stat.ripe.net/docs/02.data-api/), while
   `params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
 
+
   Optionally, `params` may include a Ripex-specific `timeout: N` option to wait
   N milliseconds instead of the default 2000 ms.  This is dropped from `params`,
   before forming the url to visit.
@@ -198,14 +199,11 @@ defmodule Ripe.API.Stat do
 
   ## Examples
 
-  As an example of an endpoint that whose "data" field is not decoded:
+  The [rir](https://stat.ripe.net/docs/02.data-api/rir.html#rir) endpoint takes a
+  an ip prefix/address as a resource and optionally starttime/endtime/lod (level of detail).
+  Its `data` field is not decoded.
 
       iex> fetch("rir", resource: "94.198.159.35")
-      ...> |> put_in(["data", "latest"], "...")
-      ...> |> put_in(["data", "query_endtime"], "...")
-      ...> |> put_in(["data", "query_starttime"], "...")
-      ...> |> put_in(["data", "rirs", Access.at(0), "first_time"], "...")
-      ...> |> put_in(["data", "rirs", Access.at(0), "last_time"], "...")
       %{
         :http => 200,
         :method => :get,
@@ -215,32 +213,61 @@ defmodule Ripe.API.Stat do
         "call_name" => "rir",
         "call_status" => "supported",
         "data" => %{
-          "latest" => "...",
+          "latest" => "2023-04-05T00:00:00",
           "lod" => 1,
-          "query_endtime" => "...",
-          "query_starttime" => "...",
+          "query_endtime" => "2023-04-05T00:00:00",
+          "query_starttime" => "2023-04-05T00:00:00",
           "resource" => "94.198.159.35/32",
-          "rirs" => [
-            %{
-              "first_time" => "...",
-              "last_time" => "...",
-              "rir" => "RIPE NCC"
-            }
-          ]
+          "rirs" => [%{"first_time" => "2023-04-05T00:00:00", "last_time" => "2023-04-05T00:00:00", "rir" => "RIPE NCC"}]
         },
         "messages" => %{"info" => "IP address has been converted to a prefix"},
         "status" => "ok",
         "version" => "0.1"
       }
 
+  If an endpoint does not exist, RIPE will happily inform you about that,
+  the `call_status` is "supported"  and `status` is "ok" (oddly enough).
 
-  ## [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
+      iex> fetch("iri", resource: "94.198.159.35")
+      %{
+        :http => 200,
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :source => "Ripe.API.Stat.iri",
+        :url => "https://stat.ripe.net/data/iri/data.json?sourceapp=github-ripex&resource=94.198.159.35",
+        "call_name" => "iri",
+        "call_status" => "supported",
+        "data" => %{},
+        "messages" => %{
+          "info" => "This data call does not exist on RIPEstat. See https://stat.ripe.net/docs/data_api for available data calls."
+        },
+        "status" => "ok",
+        "version" => "1.0"
+      }
 
-  The abuse contract finder takes a single `resource` parameter whose value can
-  be an IP address, prefix or an AS number.
+  If however, a parameter is inappropriate if will report an error:
+
+      iex> fetch("rir", resource: "oops")
+      %{
+        :error => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address.",
+        :http => 400,
+        :method => :get,
+        :opts => [recv_timeout: 2000],
+        :source => "Ripe.API.Stat.rir",
+        :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=oops",
+        "call_name" => "rir",
+        "call_status" => "supported",
+        "data" => %{},
+        "messages" => %{"error" => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address."},
+        "status" => "error",
+        "version" => "0.1"
+      }
+
+
+  The [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
+  takes a single `resource` parameter whose value can be an IP address, prefix or an AS number.
 
       iex> fetch("abuse-contact-finder", resource: "94.198.159.35")
-      ...> |> Map.put("version", "2.1")
       %{
         :http => 200,
         :method => :get,
@@ -257,17 +284,13 @@ defmodule Ripe.API.Stat do
       }
 
 
-  ## [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
-
-  ## [as-overview](https://stat.ripe.net/docs/02.data-api/as-overview.html)
-
-  ## [as-routing-consistency](https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html)
-
-  ## [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
-
-  ## [prefix-overview](https://stat.ripe.net/docs/02.data-api/prefix-overview.html)
-
-  ## [rpki-validation](https://stat.ripe.net/docs/02.data-api/rpki-validation.html)
+  Other endpoints that have their `data` field encoded, include:
+  - [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
+  - [as-overview](https://stat.ripe.net/docs/02.data-api/as-overview.html)
+  - [as-routing-consistency](https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html)
+  - [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
+  - [prefix-overview](https://stat.ripe.net/docs/02.data-api/prefix-overview.html)
+  - [rpki-validation](https://stat.ripe.net/docs/02.data-api/rpki-validation.html)
 
   """
   @spec fetch(binary, Keyword.t()) :: map
@@ -279,7 +302,6 @@ defmodule Ripe.API.Stat do
     endpoint
     |> url(params)
     |> API.fetch(timeout)
-    # |> IO.inspect()
     |> Map.put(:source, "Ripe.API.Stat.#{endpoint}")
     |> API.move_keyup("version")
     |> API.move_keyup("data_call_name", rename: "call_name")
@@ -292,7 +314,32 @@ defmodule Ripe.API.Stat do
   end
 
   @doc """
-  Returns a map with information on the routes announced by given `asnr`.
+  Returns a map with bgp/whois/rpki-information on the routes announced by given `as`.
+
+  `rpki` takes an ASnr as a single parameter, consults the
+   [as-routing-consistency](https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html)
+   and performs an
+   [rpki-validation](https://stat.ripe.net/docs/02.data-api/rpki-validation.html)
+   for each prefix found, updating the information accordingly.
+
+  ## Example
+
+      iex> rpki("AS1140")
+      ...> |> Map.get("prefixes")
+      ...> |> Map.get("185.76.132.0/22")
+      %{
+        :idx => 1,
+        "in_bgp" => true,
+        "in_whois" => true,
+        "irr_sources" => ["RIPE"],
+        "roas" => [%{
+          "max_length" => 22,
+          "origin" => "1140",
+          "prefix" => "185.76.132.0/22",
+          "validity" => "valid"
+        }],
+        "rpki" => "valid"
+       }
 
   """
   @spec rpki(binary | integer, Keyword.t()) :: map

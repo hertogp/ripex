@@ -25,8 +25,12 @@ defmodule Ripe.API.Cache do
   end
 
   @doc """
-  Returns the cached results for given `url` or nil
+  Returns the cached result for given `url` or nil
 
+  ## Example
+
+      iex> get("missing")
+      true
   """
   @spec get(binary) :: any
   def get(url) do
@@ -65,9 +69,7 @@ defmodule Ripe.API.Cache do
   def read(filename) do
     :ets.delete_all_objects(@cache)
 
-    fpath =
-      Path.join(:code.priv_dir(:ripex), filename)
-      |> IO.inspect(label: :cache_path)
+    fpath = Path.join(:code.priv_dir(:ripex), filename)
 
     if File.exists?(fpath) do
       entries =
@@ -75,9 +77,7 @@ defmodule Ripe.API.Cache do
         |> File.read!()
         |> :erlang.binary_to_term()
 
-      for {k, v} <- entries,
-          do: put(v, k)
-
+      for {k, v} <- entries, do: put(v, k)
       :ok
     else
       :error
@@ -105,8 +105,8 @@ defmodule Ripe.API.Cache do
   """
   @spec start() :: {:ok, atom} | {:error, :already_started}
   def start() do
-    IO.inspect({:ok, :ets.new(@cache, @options)}, label: :CACHE)
+    {:ok, :ets.new(@cache, @options)}
   rescue
-    ArgumentError -> IO.inspect({:error, :already_started}, label: :CACHE)
+    ArgumentError -> {:error, :already_started}
   end
 end
