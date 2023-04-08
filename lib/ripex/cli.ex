@@ -11,14 +11,17 @@ defmodule Ripex.CLI do
 
   # [[ Helpers ]]
 
-  defp get_command(cmd) do
-
-  end
   defp proceed([]),
     do: usage()
 
-  defp proceed(["help"]),
-    do: usage()
+  defp proceed(["help"]) do
+    cmds = Ripex.Cmd.list()
+    IO.puts("ripex - #{version()}\n")
+    IO.puts("available commands:\n")
+
+    for cmd <- cmds,
+        do: IO.puts("#{cmd} - and does this")
+  end
 
   defp proceed(["help" | args]),
     do: IO.puts("help for #{inspect(args)}")
