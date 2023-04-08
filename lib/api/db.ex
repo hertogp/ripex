@@ -120,7 +120,7 @@ defmodule Ripe.API.DB do
       attrs
       |> collect_keys_byvalue(fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
 
-    # IO.inspect(p_keys, label: :p_keys)
+   # IO.inspect(p_keys, label: :p_keys)
 
     result
     |> Map.put(:rir, data["source"]["id"])

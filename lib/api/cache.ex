@@ -10,12 +10,28 @@ defmodule Ripe.API.Cache do
   Clears the cache.
 
   """
-  @spec clear() :: true
-  def clear(),
-    do: :ets.delete_all_objects(@cache)
+  @spec clear() :: :ok
+  def clear() do
+    true = :ets.delete_all_objects(@cache)
+    :ok
+  end
 
   @doc """
-  Delete an entry from the cache.
+  Delete an entry under given `url` from the cache.
+
+  Returns `:ok`, even if the entry does not exist.
+
+  ## Examples
+
+      iex> del("missing")
+      :ok
+
+      iex> del("https://discography?query=acdc&year=1975&month=dec")
+      :ok
+      #
+      iex> ["acdc", "T.N.T", 1975]
+      ...> |> put("https://discography?query=acdc&year=1975&month=dec")
+      ["acdc", "T.N.T", 1975]
 
   """
   @spec del(binary) :: :ok
@@ -27,10 +43,14 @@ defmodule Ripe.API.Cache do
   @doc """
   Returns the cached result for given `url` or nil
 
-  ## Example
+  ## Examples
 
       iex> get("missing")
-      true
+      nil
+
+      iex> get("https://discography?query=acdc&year=1975&month=dec")
+      ["acdc", "T.N.T", 1975]
+
   """
   @spec get(binary) :: any
   def get(url) do
@@ -47,6 +67,17 @@ defmodule Ripe.API.Cache do
   @doc """
   Put given `data` under given `url` in the cache, returns the data.
 
+  ## Example
+
+      iex> ["acdc", "High Voltage", 1975]
+      ...> |> put("https://discography?query=acdc&year=1975&month=feb")
+      ["acdc", "High Voltage", 1975]
+      #
+      iex> get("https://discography?query=acdc&year=1975&month=feb")
+      ["acdc", "High Voltage", 1975]
+
+
+
   """
   @spec put(any, binary) :: any | :error
   def put(data, url) do
@@ -62,8 +93,17 @@ defmodule Ripe.API.Cache do
   @doc """
   Clears the cache and tries to load entries from given `filename`.
 
-  Given `filename` is looked for in the private directory, so donot
+  Given `filename` is looked for in the private directory, so do not
   use a filepath.
+
+  ## Example
+
+      iex> read("missing")
+      :error
+
+      iex> read("ripe-api-cache.ets")
+      :ok
+
   """
   @spec read(binary) :: :ok | :error
   def read(filename) do
