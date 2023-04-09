@@ -1,4 +1,44 @@
 defmodule Ripex.Cmd do
+  def available?(cmd) do
+    cmd
+    |> module()
+    |> function_exported?(:main, 1)
+  end
+
+  @doc """
+  Returns a command module's @moduledoc string or an error string.
+  """
+  def doc(cmd) do
+    cmd
+    |> IO.inspect()
+    |> module()
+    |> IO.inspect()
+    |> Code.fetch_docs()
+    |> IO.inspect()
+
+    case Code.fetch_docs(module(cmd)) do
+      {_, _, _, _, %{"en" => doc}, _, _} -> doc
+      _ -> "#{cmd} not available"
+    end
+  end
+
+  def dispatch(cmd, fun, args) do
+    cmd
+    |> module()
+    |> apply(fun, args)
+  end
+
+  def hint(cmd) do
+    cmd
+    |> doc()
+    |> String.split("\n", trim: true)
+    |> Enum.at(0)
+  end
+
+  @doc """
+  Returns a list of available commands under the `Ripex.Cmd` namespace.
+
+  """
   @spec list() :: [binary]
   def list() do
     with {:ok, list} <- :application.get_key(:ripex, :modules) do
@@ -11,19 +51,9 @@ defmodule Ripex.Cmd do
     end
   end
 
-  @spec module(binary) :: atom | {:error, any}
+  @spec module(binary) :: atom
   def module(cmd) do
-    module = Module.concat(__MODULE__, String.capitalize(cmd))
-
-    case Code.ensure_loaded(module) do
-      {:error, :nofile} ->
-        {:error, "command not supported"}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      {:module, module} ->
-        module
-    end
+    IO.inspect(cmd, label: :cmd)
+    Module.concat(__MODULE__, String.capitalize(cmd))
   end
 end

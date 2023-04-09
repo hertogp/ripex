@@ -1,6 +1,8 @@
 defmodule Ripex.CLI do
   @moduledoc false
 
+  alias Ripex.Cmd
+
   def main(args \\ System.argv()) do
     case shortcut(args) do
       :help -> usage()
@@ -19,15 +21,26 @@ defmodule Ripex.CLI do
     IO.puts("ripex - #{version()}\n")
     IO.puts("available commands:\n")
 
-    for cmd <- cmds,
-        do: IO.puts("#{cmd} - and does this")
+    for cmd <- cmds do
+      IO.puts("  #{cmd} - #{Cmd.hint(cmd)}")
+    end
   end
 
-  defp proceed(["help" | args]),
-    do: IO.puts("help for #{inspect(args)}")
+  defp proceed(["help", cmd]) do
+    cmd
+    |> Cmd.doc()
+    |> IO.puts()
+  end
 
   defp proceed([cmd | args]) do
-    IO.puts("cmd #{cmd}, args #{inspect(args)}")
+    if Cmd.available?(cmd),
+      do: Cmd.dispatch(cmd, :main, args),
+      else:
+        IO.puts("""
+          #{cmd} is not available.
+
+          Run 'ripex help' to see which commands are available.
+        """)
   end
 
   @spec shortcut([binary]) :: :help | :version | nil
@@ -51,7 +64,7 @@ defmodule Ripex.CLI do
 
       ripex - #{version()}
 
-      ripex          - Lists the available CMD's
+      ripex help     - Lists the available CMD's
       ripex help CMD - Prints the help for a given command
     """)
   end

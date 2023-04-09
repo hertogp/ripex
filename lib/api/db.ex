@@ -2,19 +2,9 @@ defmodule Ripe.API.DB do
   @moduledoc """
   Functions to retrieve
   [objects](https://apps.db.ripe.net/docs/04.RPSL-Object-Types/#rpsl-object-types)
-  from some of the
-  [RIPE NCC database](https://apps.db.ripe.net/docs/)'s
-  [RESTful API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s.
-
-  They include:
-  - [abuse-contact](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-abuse-contact),
-    retrieves abuse contact information if available.
-  - [lookup](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-lookup),
-    retrieves a single object form the RIPE database.
-  - [search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search),
-    retrieves one or more objects from the RIPE database
-  - [template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template),
-    retrieves a single template for a specified object type..
+  from the RIPE NCC
+  [database](https://apps.db.ripe.net/docs/) using some of its RESTful
+  [API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s.
 
   Note that the
   [Fair Use Policy](https://www.ripe.net/manage-ips-and-asns/db/support/documentation/ripe-database-acceptable-use-policy),
@@ -23,16 +13,15 @@ defmodule Ripe.API.DB do
   - max 1000 personal data-sets per 24 hours (see `search/2` and the `flags: "r"`)
   - max 3 simultaneous connections per IP address
 
-  and it is easy to accidently violate the maximum on personal data-sets when searching the database.
-  So beware.
+  It's easy to accidently violate the personal data-sets limit  when searching the database. So beware.
 
-  All functions support an optional `timeout N` parameter, since some queries may take longer than 2 seconds
-  (the default) to complete.
+  All functions support an optional `timeout: N` parameter, since some queries may take longer than 2 seconds
+  (the default) to complete.  `N` is in milliseconds.
 
-  The documentation of the
-  [RESTful API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s
+  The documentation of the RESTful
+  [API](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html)'s
   is sometimes a bit outdated.  The geolocation API doesn't seem to work and an alternative seems to live at
-  [ipmap.ripe.net](https://ipmap.ripe.net/docs/02.api-reference/)
+  [ipmap.ripe.net](https://ipmap.ripe.net/docs/02.api-reference/).
   """
 
   alias Ripe.API
@@ -225,31 +214,31 @@ defmodule Ripe.API.DB do
   - `opts` may include a `timeout: N`, where N is the timeout in ms (default 2000).
 
   Upon success, a map is returned with keys:
-  - `:http`, 200,
-  - `:method`, :get,
+  - `:http`, 200
+  - `:method`, :get
   - `:opts`, options given to the http client
-  - `:primary_key`, primary key for object found,
-  - `:source`, "Ripe.API.DB.abuse_c",
+  - `:primary_key`, primary key for object found
+  - `:source`, "Ripe.API.DB.abuse_c"
   - `:url`, the url used to retrieve the information
-  - `"email"`, "some email address",
-  - `"key"`, "nic-handle of role or person",
-  - `"org-id"`,  "nic-handle of organisation",
+  - `"email"`, some email address
+  - `"key"`, nic-handle of a role or a person
+  - `"org-id"`,  nic-handle of an organisation
   - `"suspect"`, false (or true :)
 
   Upon failure, a map is returned with keys:
-  - `error:`, "some reason",
-  - `http:`, 400,
-  - `method:`, :get,
+  - `error:`, some reason
+  - `http:`, 400 (usually)
+  - `method:`, :get
   - `opts:`, options given to the http client
-  - `source:` "Ripe.API.DB.abuse_c",
-  - `url:` "the url that was used"
+  - `source:` "Ripe.API.DB.abuse_c"
+  - `url:`, the url that was used
 
   Note that even if the call returns successful, there might not be any contact
   information available (i.e. it doesn't return a 404).
 
   ## Examples
 
-  Abuse contact for an ASnr:
+  Abuse contact for an AS:
 
       iex> abuse_c("AS3333")
       %{
@@ -405,8 +394,8 @@ defmodule Ripe.API.DB do
   end
 
   @doc """
-  Retrieves one or more objects via [Ripe
-  Search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
+  Retrieves one or more objects via a Ripe
+  [search](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#rest-api-search).
 
   The `query` parameter specifies the string value to search for.  By default this will find objects
   whose primary key matches or have a lookup key that (partially) matches.
@@ -563,7 +552,9 @@ defmodule Ripe.API.DB do
   end
 
   @doc """
-  Retrieves a template for given `object`-type.
+  Retrieves a
+  [template](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#metadata-object-template)
+  for given `object`-type.
 
   `opts` may include:
   - `timeout: N`, where N is the desired timeout in ms (default 2000)
