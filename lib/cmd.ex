@@ -2,6 +2,7 @@ defmodule Ripex.Cmd do
   def available?(cmd) do
     cmd
     |> module()
+    |> Code.ensure_loaded!()
     |> function_exported?(:main, 1)
   end
 
@@ -9,13 +10,6 @@ defmodule Ripex.Cmd do
   Returns a command module's @moduledoc string or an error string.
   """
   def doc(cmd) do
-    cmd
-    |> IO.inspect()
-    |> module()
-    |> IO.inspect()
-    |> Code.fetch_docs()
-    |> IO.inspect()
-
     case Code.fetch_docs(module(cmd)) do
       {_, _, _, _, %{"en" => doc}, _, _} -> doc
       _ -> "#{cmd} not available"
@@ -52,8 +46,6 @@ defmodule Ripex.Cmd do
   end
 
   @spec module(binary) :: atom
-  def module(cmd) do
-    IO.inspect(cmd, label: :cmd)
-    Module.concat(__MODULE__, String.capitalize(cmd))
-  end
+  def module(cmd),
+    do: Module.concat(__MODULE__, String.capitalize(cmd))
 end

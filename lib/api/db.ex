@@ -244,7 +244,7 @@ defmodule Ripe.API.DB do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :primary_key => "AS3333",
         :source => "Ripe.API.DB.abuse_c",
         :url => "https://rest.db.ripe.net/abuse-contact/AS3333.json",
@@ -260,7 +260,7 @@ defmodule Ripe.API.DB do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :primary_key => "0.0.0.0 - 1.178.111.255",
         :source => "Ripe.API.DB.abuse_c",
         :url => "https://rest.db.ripe.net/abuse-contact/1.1.1.1.json",
@@ -277,7 +277,7 @@ defmodule Ripe.API.DB do
         error: "Invalid argument: 1.1.1.x",
         http: 400,
         method: :get,
-        opts: [recv_timeout: 2000],
+        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.abuse_c",
         url: "https://rest.db.ripe.net/abuse-contact/1.1.1.x.json"
       }
@@ -290,7 +290,7 @@ defmodule Ripe.API.DB do
         error: "No abuse contact found for ::1.1.1.1",
         http: 404,
         method: :get,
-        opts: [recv_timeout: 2000],
+        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.abuse_c",
         url: "https://rest.db.ripe.net/abuse-contact/::1.1.1.1.json"
       }
@@ -298,7 +298,7 @@ defmodule Ripe.API.DB do
   @spec abuse_c(binary, Keyword.t()) :: map
   def abuse_c(key, opts \\ []) do
     # db_lookup = "https://rest.db.ripe.net/ripe"
-    opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+    opts = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
 
     "#{@db_abuse_c}/#{key}.json"
     |> API.fetch(opts)
@@ -341,7 +341,7 @@ defmodule Ripe.API.DB do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 5000],
+        :opts => [adapter: [recv_timeout: 5000]],
         :primary_key => "193.0.0.0/21AS3333",
         :source => "Ripe.API.DB.lookup",
         :type => "route",
@@ -364,7 +364,7 @@ defmodule Ripe.API.DB do
         error: "ERROR:101: no entries found\\n\\nNo entries found in source RIPE.\\n",
         http: 404,
         method: :get,
-        opts: [recv_timeout: 2000],
+        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.lookup",
         type: "route",
         url: "https://rest.db.ripe.net/ripe/route/193.0.0.0/21.json"
@@ -374,7 +374,7 @@ defmodule Ripe.API.DB do
   @spec lookup(binary, binary, Keyword.t()) :: map
   def lookup(object, key, opts \\ []) do
     # db_lookup = "https://rest.db.ripe.net/ripe"
-    opts = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+    opts = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
 
     flags =
       [
@@ -471,7 +471,7 @@ defmodule Ripe.API.DB do
             "type" => "route"
           }
         ],
-        opts: [recv_timeout: 2000],
+        opts: [adapter: [recv_timeout: 2000]],
         query: "193.0.0.0/21",
         source: "Ripe.API.DB.search",
         url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route&query-string=193.0.0.0/21",
@@ -514,7 +514,7 @@ defmodule Ripe.API.DB do
             "type" => "route"
           }
         ],
-        opts: [recv_timeout: 2000],
+        opts: [adapter: [recv_timeout: 2000]],
         query: "193.0.0.0/21",
         source: "Ripe.API.DB.search",
         url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route,inetnum&query-string=193.0.0.0/21",
@@ -542,7 +542,7 @@ defmodule Ripe.API.DB do
       |> Kernel.++(flags)
       |> Enum.join("&")
 
-    timeout = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+    timeout = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
 
     "#{@db_search}#{params}&query-string=#{query}"
     |> API.fetch(timeout)
@@ -623,7 +623,7 @@ defmodule Ripe.API.DB do
           "ds-rdata", "notify", "mnt-by"],
         :lookup_keys => ["domain"],
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :primary_keys => ["domain"],
         :rir => "ripe",
         :source => "Ripe.API.DB.template",
@@ -717,7 +717,7 @@ defmodule Ripe.API.DB do
   def template(object, opts \\ []) do
     # @db_template -> "https://rest.db.ripe.net/metadata/templates"
 
-    timeout = [opts: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]
+    timeout = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
 
     "#{@db_template}/#{object}.json"
     |> API.fetch(timeout)

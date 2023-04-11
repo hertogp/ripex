@@ -76,7 +76,8 @@ defmodule Ripe.API do
       %{
          error: :nxdomain,
          http: -1,
-         url: "www.example.nlxyz"
+         url: "www.example.nlxyz",
+         opts: []
       }
 
   When things almost go right:
@@ -97,6 +98,14 @@ defmodule Ripe.API do
     # Note:
     # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
     # - in case of a timeout, decode cannot add the url, so add it here.
+    # [opts: [adapter: [recv_timeout: N]]]
+    # {time, opts} = Keyword.pop(opts, :timeout, 2000)
+    #
+    # opts =
+    #   opts
+    #   |> Keyword.get(:opts, [])
+    #   |> Keyword.put(:adapter, recv_timeout: time)
+    #   |> then(fn timeout -> Keyword.put(opts, :opts, timeout) end)
 
     url = URI.encode(url)
 
@@ -111,6 +120,7 @@ defmodule Ripe.API do
     end
     |> decode()
     |> Map.put(:url, url)
+    |> Map.put(:opts, Keyword.get(opts, :opts, []))
   end
 
   @doc """

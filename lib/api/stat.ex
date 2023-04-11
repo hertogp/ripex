@@ -207,7 +207,7 @@ defmodule Ripe.API.Stat do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.rir",
         :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "call_name" => "rir",
@@ -232,7 +232,7 @@ defmodule Ripe.API.Stat do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.iri",
         :url => "https://stat.ripe.net/data/iri/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "call_name" => "iri",
@@ -252,7 +252,7 @@ defmodule Ripe.API.Stat do
         :error => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address.",
         :http => 400,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.rir",
         :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=oops",
         "call_name" => "rir",
@@ -271,7 +271,7 @@ defmodule Ripe.API.Stat do
       %{
         :http => 200,
         :method => :get,
-        :opts => [recv_timeout: 2000],
+        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.abuse-contact-finder",
         :url => "https://stat.ripe.net/data/abuse-contact-finder/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "abuse-c" => ["abuse@sidn.nl"],
@@ -296,12 +296,12 @@ defmodule Ripe.API.Stat do
   @spec fetch(binary, Keyword.t()) :: map
   def fetch(endpoint, params \\ []) do
     {time, params} = Keyword.pop(params, :timeout, 2000)
-    timeout = [opts: [recv_timeout: time]]
+    opts = [opts: [adapter: [recv_timeout: time]]]
     first_word = fn str -> String.split(str) |> hd() end
 
     endpoint
     |> url(params)
-    |> API.fetch(timeout)
+    |> API.fetch(opts)
     |> Map.put(:source, "Ripe.API.Stat.#{endpoint}")
     |> API.move_keyup("version")
     |> API.move_keyup("data_call_name", rename: "call_name")
@@ -345,13 +345,14 @@ defmodule Ripe.API.Stat do
   @spec rpki(binary | integer, Keyword.t()) :: map
   def rpki(as, opts \\ []) do
     opts = Keyword.put(opts, :resource, as)
-    dta = fetch("as-routing-consistency", opts)
+    timeout = Keyword.get(opts, :timeout, 2000)
+    dta = fetch("as-routing-consistency", resource: as, timeout: timeout)
 
     if dta.http == 200 do
       dta
       |> update_in(["prefixes"], fn map ->
         for {pfx, attrs} <- map, into: %{} do
-          rpki = fetch("rpki-validation", resource: as, prefix: pfx)
+          rpki = fetch("rpki-validation", resource: as, prefix: pfx, timeout: timeout)
           roas = Enum.filter(rpki["validating_roas"], fn roa -> roa["validity"] == "valid" end)
           pki_attrs = %{"rpki" => rpki["rpki_status"], "roas" => roas}
 
@@ -362,5 +363,16 @@ defmodule Ripe.API.Stat do
       dta
     end
     |> Map.put(:source, "Ripe.API.Stat.rpki")
+  end
+
+  def ip2asn(ip, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, 10000)
+
+    fetch("network-info", resource: ip, timeout: timeout)
+    |> Map.get("asns")
+    |> case do
+      nil -> []
+      asns -> asns
+    end
   end
 end

@@ -8,7 +8,7 @@ defmodule Ripex.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: Ripex.CLI]
+      escript: [main_module: Ripex.CLI, strip_beams: [keep: "Docs"]]
     ]
   end
 

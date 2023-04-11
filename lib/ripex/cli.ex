@@ -34,7 +34,7 @@ defmodule Ripex.CLI do
 
   defp proceed([cmd | args]) do
     if Cmd.available?(cmd),
-      do: Cmd.dispatch(cmd, :main, args),
+      do: Cmd.dispatch(cmd, :main, [args]),
       else:
         IO.puts("""
           #{cmd} is not available.
