@@ -20,7 +20,8 @@ defmodule Ripex.Cmd.Rpki do
 
   TODO:
   - [ ] transform args to AS numbers from IP, AS<N>, N, prefix or fqdn.
-  - [ ] add stats to tables
+  - [x] Use simple table, converts to table in pdf, looks gooed in markdown
+  - [x] add stats to tables
   - [x] implement the options
   - [x] bail on bad options
   - [x] sort the import/export lists
@@ -37,8 +38,11 @@ defmodule Ripex.Cmd.Rpki do
     timeout: :integer,
     verbose: :boolean
   ]
+
   @doc """
-  This is the hint for this command
+  The rpki command main entry point.
+
+  Invoked by `ripex rpki ...`
   """
   def main(argv) do
     {opts, args, bad} = OptionParser.parse(argv, strict: @options, aliases: @aliases)
@@ -50,17 +54,49 @@ defmodule Ripex.Cmd.Rpki do
       System.halt(1)
     end
 
-    # IO.inspect(opts, label: :opts)
-    # IO.inspect(bad, label: :bad)
-    # IO.inspect(args, label: :args)
-    timeout = Keyword.get(opts, :timeout, 10000)
-    verbose = Keyword.get(opts, :verbose, false)
-
-    [meta(), Enum.map(args, fn as -> report(as, verbose, timeout) end)]
+    [meta(), Enum.map(args, fn as -> report(as, opts) end)]
     |> IO.puts()
   end
 
   # [[ Helpers ]]
+
+  def label(args) do
+    args
+    |> Enum.map(&do_label/1)
+    |> Enum.map(&do_value/1)
+    |> List.flatten()
+    |> Enum.uniq_by(fn m -> m.as end)
+  end
+
+  defp do_label(arg) do
+    cond do
+      String.match?(arg, ~r/^\d+$/) -> %{type: :as, as: arg}
+      String.match?(arg, ~r/^as\d+$/i) -> %{type: :as, as: String.replace(arg, ~r/as/i, "")}
+      :ok == Pfx.parse(arg) |> elem(0) -> %{type: :pfx, pfx: arg}
+      true -> %{type: :domain, domain: arg}
+    end
+  end
+
+  defp do_value(%{type: :pfx} = arg) do
+    Ripe.API.Stat.ip2asn(arg.pfx)
+    |> Enum.map(fn as -> Map.put(arg, :as, as) end)
+  end
+
+  defp do_value(%{type: :domain} = arg) do
+    ips =
+      arg.domain
+      |> String.to_charlist()
+      |> :inet_res.lookup(:in, :a)
+      |> Enum.map(fn ip -> Map.put(arg, :ip, "#{Pfx.new(ip)}") end)
+
+    for m <- ips do
+      Ripe.API.Stat.ip2asn(m.ip)
+      |> Enum.map(fn as -> Map.put(m, :as, as) end)
+    end
+  end
+
+  defp do_value(arg),
+    do: arg
 
   defp aligned(lol) do
     # given a list of lists of strings, calculate column widths and pad cell
@@ -88,9 +124,14 @@ defmodule Ripex.Cmd.Rpki do
     ["# AS#{obj["asn"]}\n\n"]
   end
 
-  defp meta() do
-    ["---\n", "title: RPKI check\n", "author: ripex\n", "date: #{Date.utc_today()}\n", "...\n\n"]
-  end
+  defp meta(),
+    do: [
+      "---\n",
+      "title: RPKI check\n",
+      "author: ripex\n",
+      "date: #{Date.utc_today()}\n",
+      "...\n\n"
+    ]
 
   defp peers(obj, type) when type in ["imports", "exports"] do
     lol =
@@ -115,36 +156,33 @@ defmodule Ripex.Cmd.Rpki do
 
     case length(lol) do
       1 ->
-        ["## AS#{obj["asn"]} #{type}\n\nNo peers found.\n\n"]
+        ["\n## AS#{obj["asn"]} #{type}\n\nNo peers found.\n\n"]
 
       _ ->
         [
-          "## AS#{obj["asn"]} #{type}\n\n",
-          "```\n",
-          lol,
-          "```\n\n",
-          "Summary:\n\n",
-          "```\n",
-          stats,
-          "```\n\n"
+          "\n## AS#{obj["asn"]} #{type}\n\n",
+          table(lol),
+          "\nTable: peer #{type}.\n\n\n",
+          table(stats),
+          "\nTable: #{type} stats.\n\n\n"
         ]
     end
   end
 
-  defp report(as, verbose, timeout) do
+  defp report(as, opts) do
+    timeout = Keyword.get(opts, :timeout, 10000)
+    verbose = Keyword.get(opts, :verbose, false)
+
     with %{http: 200} = obj <- Ripe.API.Stat.rpki(as, timeout: timeout) do
       case verbose do
         false -> [head(obj), routes(obj)]
         true -> [head(obj), routes(obj), peers(obj, "imports"), peers(obj, "exports")]
       end
-
-      # obj = Ripe.API.Stat.rpki(as, timeout: timeout)
     else
       %{error: :timeout} = err ->
         [
           "# AS#{as}\n\n",
-          "Error: #{err[:error]}, maybe try -t N with a large N?\n",
-          "http: #{err[:http]}\n",
+          "Error: #{err[:error]}, maybe try -t N where N > 10000?\n",
           "Url: #{err[:url]}\n\n"
         ]
 
@@ -158,8 +196,16 @@ defmodule Ripex.Cmd.Rpki do
     end
   end
 
-  defp roas(list) do
-    for roa <- list, roa["validity"] == "valid", into: [] do
+  defp roas(roas) do
+    # return soa summary as 1 string
+    # - when not valid, there seem to be no roa's in the list?
+
+    # for roa <- roas, roa["validity"] == "valid", into: [] do
+    #   "#{roa["prefix"]}-#{roa["max_length"]}-#{roa["origin"]}"
+    # end
+    # |> Enum.join(" ")
+
+    for roa <- roas, into: [] do
       "#{roa["prefix"]}-#{roa["max_length"]}-#{roa["origin"]}"
     end
     |> Enum.join(" ")
@@ -184,14 +230,22 @@ defmodule Ripex.Cmd.Rpki do
       |> aligned()
 
     [
-      "## AS#{obj["asn"]} routing\n\n",
-      "```\n",
-      lol,
-      "```\n\n",
-      "Summary:\n\n",
-      "```\n",
-      stats,
-      "```\n\n"
+      "## AS#{obj["asn"]} prefixes\n\n",
+      table(lol),
+      "\nTable: as routing consistency\n\n\n",
+      table(stats),
+      "\nTable: consistency stats.\n\n\n"
     ]
+  end
+
+  defp table([head | tail]) do
+    seps =
+      head
+      |> hd()
+      |> Enum.map(fn w -> String.length(w) - 1 end)
+      |> Enum.map(fn l -> String.duplicate("-", l) end)
+      |> Enum.join(" ")
+
+    [head, seps, "\n", tail]
   end
 end

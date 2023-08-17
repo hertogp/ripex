@@ -22,8 +22,14 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 ripex-*.tar
 
+# Ignore escript executable
+ripex
+
 # Temporary files, for example, from tests.
 /tmp/
+
+# Ignore the scratch directory
+/scr/
 
 # local notes
 /notes/

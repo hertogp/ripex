@@ -24,7 +24,7 @@ defmodule Ripex.MixProject do
     [
       {:tesla, "~> 1.4.0"},
       {:hackney, "~> 1.10"},
-      {:iptrie, "~> 0.8"},
+      {:iptrie, "~> 0.9"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},

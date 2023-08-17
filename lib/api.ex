@@ -1,4 +1,10 @@
 defmodule Ripe.API do
+  # TODO
+  # add https://crt.sh/?q=<domain>&output=json
+  # see
+  # - https://github.com/crtsh/certwatch_db/issues/38
+  # - https://www.randori.com/blog/enumerating-subdomains-with-crt-sh/
+
   @moduledoc """
   Utility functions used by all endpoints across all RIPE API's.
 
@@ -9,7 +15,12 @@ defmodule Ripe.API do
   """
 
   use Tesla, only: [:get], docs: false
-  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
+
+  plug(Tesla.Middleware.Headers, [
+    {"accept", "application/json"},
+    {"user-agent", "ripex"}
+  ])
+
   plug(Tesla.Middleware.FollowRedirects, max_redirects: 3)
   plug(Tesla.Middleware.JSON)
 
@@ -19,13 +30,13 @@ defmodule Ripe.API do
 
   @spec decode(Tesla.Env.result()) :: map
   defp decode({:ok, env}) do
-    # Note: no env.headers since we're following redirects.
     %{
       url: env.url,
       http: env.status,
       body: env.body,
       method: env.method,
-      opts: env.opts
+      opts: env.opts,
+      headers: env.headers
     }
   end
 
@@ -98,28 +109,37 @@ defmodule Ripe.API do
     # Note:
     # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
     # - in case of a timeout, decode cannot add the url, so add it here.
-    # [opts: [adapter: [recv_timeout: N]]]
-    # {time, opts} = Keyword.pop(opts, :timeout, 2000)
-    #
-    # opts =
-    #   opts
-    #   |> Keyword.get(:opts, [])
-    #   |> Keyword.put(:adapter, recv_timeout: time)
-    #   |> then(fn timeout -> Keyword.put(opts, :opts, timeout) end)
+    [opts: [adapter: [recv_timeout: N]]]
+    {time, opts} = Keyword.pop(opts, :timeout, 2000)
+    {cache, opts} = Keyword.pop(opts, :cache, true)
+
+    # long way round, but honors any other opts already in [opts: [..]]
+    opts =
+      opts
+      |> Keyword.get(:opts, [])
+      |> Keyword.put(:adapter, recv_timeout: time)
+      |> then(fn adapter_opts -> Keyword.put(opts, :opts, adapter_opts) end)
 
     url = URI.encode(url)
 
-    case Cache.get(url) do
-      nil ->
-        url
-        |> get(opts)
-        |> Cache.put(url)
+    if cache do
+      case Cache.get(url) do
+        nil ->
+          url
+          |> get(opts)
+          |> Cache.put(url)
 
-      data ->
-        data
+        data ->
+          data
+      end
+    else
+      url
+      |> get(opts)
+      |> Cache.put(url)
     end
     |> decode()
     |> Map.put(:url, url)
+    |> Map.put(:cache, cache)
     |> Map.put(:opts, Keyword.get(opts, :opts, []))
   end
 
