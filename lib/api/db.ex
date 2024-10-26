@@ -26,11 +26,6 @@ defmodule Ripe.API.DB do
 
   alias Ripe.API
 
-  @db_abuse_c "https://rest.db.ripe.net/abuse-contact"
-  @db_lookup "https://rest.db.ripe.net/ripe"
-  @db_template "https://rest.db.ripe.net/metadata/templates"
-  @db_search "https://rest.db.ripe.net/search.json?"
-
   # [[ TODO: ]]
   # - add subAPI https://ipmap.ripe.net/ (since rest.db.ripe.net/geolocation doesn't work anymore)
   #   `-> see https://ipmap.ripe.net/docs/02.api-reference/
@@ -62,7 +57,7 @@ defmodule Ripe.API.DB do
   end
 
   @spec decode(map) :: map
-  defp decode(%{http: 200, source: "Ripe.API.DB.abuse_c"} = result) do
+  defp decode(%{source: "Ripe.API.DB.abuse_c", http: 200} = result) do
     # abuse_c doesn't really return an RPSL object
 
     obj = result[:body]["abuse-contacts"]
@@ -74,7 +69,17 @@ defmodule Ripe.API.DB do
     |> Map.delete(:body)
   end
 
-  defp decode(%{http: 200, source: "Ripe.API.DB.lookup"} = result) do
+  defp decode(%{source: "Ripe.API.DB.abuse_c"} = result) do
+    # not a http: 200 -> error, 301 is redirect with empty body (redirect
+    # contains the error messages)
+    msg = result[:body]["message"]
+
+    result
+    |> Map.put(:error, msg)
+    |> Map.delete(:body)
+  end
+
+  defp decode(%{source: "Ripe.API.DB.lookup", http: 200} = result) do
     # lookup returns only one object
 
     obj =
@@ -90,7 +95,15 @@ defmodule Ripe.API.DB do
     |> Map.delete(:body)
   end
 
-  defp decode(%{http: 200, source: "Ripe.API.DB.search"} = result) do
+  defp decode(%{source: "Ripe.API.DB.lookup"} = result) do
+    # not a http: 200 -> error, 301 is redirect with empty body (redirect
+    # contains the error messages)
+    result
+    |> Map.put(:error, decode_err(result))
+    |> Map.delete(:body)
+  end
+
+  defp decode(%{source: "Ripe.API.DB.search", http: 200} = result) do
     # search returns one or more objects
 
     objects =
@@ -105,28 +118,23 @@ defmodule Ripe.API.DB do
     |> Map.delete(:body)
   end
 
-  defp decode(%{http: 200, source: "Ripe.API.DB.template"} = result) do
+  defp decode(%{source: "Ripe.API.DB.search"} = result) do
+    # not a http: 200 -> error
+
+    result
+    |> Map.put(:error, decode_err(result))
+    |> Map.delete(:body)
+  end
+
+  defp decode(%{source: "Ripe.API.DB.template", http: 200} = result) do
     # template returns only one object in its own formatt
 
     data = result[:body]["templates"]["template"] |> hd()
+    attrs = API.map_bykey(data["attributes"]["attribute"], "name")
 
-    attrs =
-      data["attributes"]["attribute"]
-      |> API.map_bykey("name")
-
-    p_keys =
-      attrs
-      |> collect_keys_byvalue(fn m -> "PRIMARY_KEY" in Map.get(m, "keys", []) end)
-
-    l_keys =
-      attrs
-      |> collect_keys_byvalue(fn m -> "LOOKUP_KEY" in Map.get(m, "keys", []) end)
-
-    i_keys =
-      attrs
-      |> collect_keys_byvalue(fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
-
-    # IO.inspect(p_keys, label: :p_keys)
+    p_keys = collect_keys_byvalue(attrs, fn m -> "PRIMARY_KEY" in Map.get(m, "keys", []) end)
+    l_keys = collect_keys_byvalue(attrs, fn m -> "LOOKUP_KEY" in Map.get(m, "keys", []) end)
+    i_keys = collect_keys_byvalue(attrs, fn m -> "INVERSE_KEY" in Map.get(m, "keys", []) end)
 
     result
     |> Map.put(:rir, data["source"]["id"])
@@ -138,32 +146,9 @@ defmodule Ripe.API.DB do
     |> Map.merge(attrs)
   end
 
-  defp decode(%{source: "Ripe.API.DB.abuse_c"} = result) do
-    # not a http: 200 -> error, 301 is redirect with empty body (redirect
-    # contains the error messages)
-    result[:body]["message"]
-    |> then(fn msg -> Map.put(result, :error, msg) end)
-    |> Map.delete(:body)
-  end
-
-  defp decode(%{source: "Ripe.API.DB.lookup"} = result) do
-    # not a http: 200 -> error, 301 is redirect with empty body (redirect
-    # contains the error messages)
-    result
-    |> Map.put(:error, decode_err(result))
-    |> Map.delete(:body)
-  end
-
-  defp decode(%{source: "Ripe.API.DB.search"} = result) do
-    # not a http: 200 -> error
-
-    result
-    |> Map.put(:error, decode_err(result))
-    |> Map.delete(:body)
-  end
-
   defp decode(%{source: "Ripe.API.DB.template"} = result) do
     # not a http: 200 -> error
+
     result
     |> Map.put(:error, result[:body]["message"])
     |> Map.delete(:body)
@@ -173,7 +158,6 @@ defmodule Ripe.API.DB do
   defp decode_err(obj) do
     (obj[:body]["errormessages"]["errormessage"] ||
        [%{"text" => "unknown error"}])
-    # |> IO.inspect(label: :obj_err)
     |> Enum.map(fn map -> {map["text"], Enum.map(map["args"] || [], fn m -> m["value"] end)} end)
     |> Enum.map(fn {msg, args} ->
       Enum.reduce(args, msg, fn val, acc ->
@@ -185,10 +169,9 @@ defmodule Ripe.API.DB do
 
   @spec decode_obj(map) :: map
   defp decode_obj(obj) do
-    # decode a single object
+    # decode a single RPSL object
     attrs =
       obj["attributes"]["attribute"]
-      # |> IO.inspect(label: :object)
       |> collect_values_bykey("name", "value")
 
     primary_key =
@@ -211,9 +194,9 @@ defmodule Ripe.API.DB do
 
   where:
   - `key` is either an ASnr, IP Prefix or an IP address.
-  - `opts` may include a `timeout: N`, where N is the timeout in ms (default 2000).
 
   Upon success, a map is returned with keys:
+  - `:headers`, the response's headers
   - `:http`, 200
   - `:method`, :get
   - `:opts`, options given to the http client
@@ -244,7 +227,6 @@ defmodule Ripe.API.DB do
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :primary_key => "AS3333",
         :source => "Ripe.API.DB.abuse_c",
         :url => "https://rest.db.ripe.net/abuse-contact/AS3333.json",
@@ -260,7 +242,6 @@ defmodule Ripe.API.DB do
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :primary_key => "0.0.0.0 - 1.178.111.255",
         :source => "Ripe.API.DB.abuse_c",
         :url => "https://rest.db.ripe.net/abuse-contact/1.1.1.1.json",
@@ -277,7 +258,6 @@ defmodule Ripe.API.DB do
         error: "Invalid argument: 1.1.1.x",
         http: 400,
         method: :get,
-        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.abuse_c",
         url: "https://rest.db.ripe.net/abuse-contact/1.1.1.x.json"
       }
@@ -290,19 +270,15 @@ defmodule Ripe.API.DB do
         error: "No abuse contact found for ::1.1.1.1",
         http: 404,
         method: :get,
-        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.abuse_c",
         url: "https://rest.db.ripe.net/abuse-contact/::1.1.1.1.json"
       }
   """
   @spec abuse_c(binary, Keyword.t()) :: map
   def abuse_c(key, opts \\ []) do
-    # db_lookup = "https://rest.db.ripe.net/ripe"
-    opts = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
-
-    "#{@db_abuse_c}/#{key}.json"
-    |> API.fetch(opts)
-    # |> IO.inspect()
+    "/abuse-contact/#{key}.json"
+    |> API.db_req(opts)
+    |> Map.drop([:headers, :opts])
     |> Map.put(:source, "Ripe.API.DB.abuse_c")
     |> decode()
   end
@@ -337,16 +313,14 @@ defmodule Ripe.API.DB do
 
   A RIPE route object:
 
-      iex> lookup("route", "193.0.0.0/21AS3333", timeout: 5000)
+      iex> lookup("route", "193.0.0.0/21AS3333") |> Map.delete(:version)
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 5000]],
         :primary_key => "193.0.0.0/21AS3333",
         :source => "Ripe.API.DB.lookup",
         :type => "route",
         :url => "https://rest.db.ripe.net/ripe/route/193.0.0.0/21AS3333.json",
-        :version => "1.106",
         "created" => ["1970-01-01T00:00:00Z"],
         "descr" => ["RIPE-NCC"],
         "last-modified" => ["2008-09-10T14:27:53Z"],
@@ -364,7 +338,6 @@ defmodule Ripe.API.DB do
         error: "ERROR:101: no entries found\\n\\nNo entries found in source RIPE.\\n",
         http: 404,
         method: :get,
-        opts: [adapter: [recv_timeout: 2000]],
         source: "Ripe.API.DB.lookup",
         type: "route",
         url: "https://rest.db.ripe.net/ripe/route/193.0.0.0/21.json"
@@ -372,24 +345,11 @@ defmodule Ripe.API.DB do
 
   """
   @spec lookup(binary, binary, Keyword.t()) :: map
-  def lookup(object, key, opts \\ []) do
-    # db_lookup = "https://rest.db.ripe.net/ripe"
-    opts = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
-
-    flags =
-      [
-        Keyword.get(opts, :unfiltered, false) && "unfiltered",
-        Keyword.get(opts, :unformatted, false) && "unformatted"
-      ]
-      |> Enum.filter(fn x -> x end)
-      |> Enum.join("&")
-
-    "#{@db_lookup}/#{object}/#{key}.json?#{flags}"
-    |> String.replace_suffix("?", "")
-    |> API.fetch(opts)
-    # |> IO.inspect()
+  def lookup(type, key, opts \\ []) do
+    API.db_req("/ripe/#{type}/#{key}.json", opts)
     |> Map.put(:source, "Ripe.API.DB.lookup")
-    |> Map.put(:type, object)
+    |> Map.put(:type, type)
+    |> Map.drop([:headers, :opts])
     |> decode()
   end
 
@@ -404,15 +364,21 @@ defmodule Ripe.API.DB do
   - [primary vs lookup keys](https://apps.db.ripe.net/docs/13.Types-of-Queries/01-Queries-Using-Primary-and-Lookup-Keys.html#queries-using-primary-and-lookup-keys)
   - [what is returned](https://apps.db.ripe.net/docs/16.Tables-of-Query-Types-Supported-by-the-RIPE-Database/#table-1-queries-using-primary-and-lookup-keys)
 
-  Use `params` to list additional [query
+  See `Req.new/1` to see the list of options that can be passed to `Ripe.API.db_req/2`.
+  The most used options include:
+  - `receive_timeout: N`, for timeout in milliseconds for a reply
+  - `params:`, to pass in query parameters not encoded in the `query` itself (see below)
+
+
+  Use `:params` to list additional [query
   parameters](https://apps.db.ripe.net/docs/11.How-to-Query-the-RIPE-Database/03-RESTful-API-Queries.html#uri-query-parameters)
   in the form of `[{"name", ["value", ...]}, ..]` as needed.  They include:
 
   - `source:`, the name or list of names of the sources to be searched
   - `"inverse-attribute":`,  the name or list of names of inverse indexed attributes to search
-  - `"include-tag":`, name or list of names of tags that RPSL objects must have
-  - `"exclude-tag":`, name or list of names of tags that RPSL objects cannot have
-  - `"type-filter":`, type or list of types the returned objects must have
+  - `"include-tag":`, name or csv-list of names of tags that RPSL objects must have
+  - `"exclude-tag":`, name or csv-list of names of tags that RPSL objects cannot have
+  - `"type-filter":`, type or csv-list of types the returned objects must have
   - `flags:`, a flag or list of flags to influence the search behaviour (see below)
   - `unformatted:`, if true, attribute values maintain their original formatting
   - `"managed-attributes":`, if true, adds a RIPE "managed" boolean field to objects
@@ -439,22 +405,24 @@ defmodule Ripe.API.DB do
   Adding the `flags: "r"` will help prevent exceeding the [Fair Use
     Policy](https://www.ripe.net/manage-ips-and-asns/db/support/documentation/ripe-database-acceptable-use-policy),
   especially when looking for more specific objects for a large prefix since there is a limit on the
-  amount of contact information you can retrieve in a day.
+  amount of contact information you can retrieve in a day.  You can either repeat the `flags:` parameter
+  or simply list all flags in a string, e.g. `params: [flags: "rG"]`
 
   ## Examples
 
-  - `search("as3333", "inverse-attribute": "origin")`
+  - `search("as3333", params: ["inverse-attribute": "origin"])`
     - find all route(6) objects whose origin matches as3333
 
-  - `search("RIPE-NCC-MNT", "inverse-attribute": "mnt-by", flags: "r", "type-filter": "domain")`
+  - `search("RIPE-NCC-MNT", params: ["inverse-attribute": "mnt-by", flags: "r", "type-filter": "domain"])`
     - find all domains maintained by RIPE-NCC-MNT, without any additional contact information
 
-  - `search("RIPE-NCC-MNT", "inverse-attribute": "mnt-by", "type-filter": ["inetnum", "inet6num"], flags: "r")`
-    - find all inet(6)num's maintained by RIPE-NCC-MNT, without additional contact information
+  - `search("RIPE-NCC-MNT", params: ["inverse-attribute": "mnt-by", "type-filter": "inetnum,inet6num", flags: "rG"])`
+    - find all inet(6)num's maintained by RIPE-NCC-MNT, without additional contact information or grouping
 
   Search for a route object given a certain prefix.
 
-      iex>  Ripe.API.DB.search("193.0.0.0/21", flags: "r", "type-filter": "route")
+      iex> Ripe.API.DB.search("193.0.0.0/21", params: [flags: "r", "type-filter": "route"])
+      ...> |> Map.drop([:version])
       %{
         http: 200,
         method: :get,
@@ -471,16 +439,15 @@ defmodule Ripe.API.DB do
             "type" => "route"
           }
         ],
-        opts: [adapter: [recv_timeout: 2000]],
         query: "193.0.0.0/21",
         source: "Ripe.API.DB.search",
-        url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route&query-string=193.0.0.0/21",
-        version: "1.106"
+        url: "https://rest.db.ripe.net/search.json?query-string=193.0.0.0/21&flags=r&type-filter=route",
       }
 
     Find both the inetnum and route objects.
 
-      iex> Ripe.API.DB.search("193.0.0.0/21", flags: "r", "type-filter": "route,inetnum")
+      iex> Ripe.API.DB.search("193.0.0.0/21", params: [flags: "r", "type-filter": "route,inetnum"])
+      ...> |> Map.drop([:version])
       %{
         http: 200,
         method: :get,
@@ -514,40 +481,19 @@ defmodule Ripe.API.DB do
             "type" => "route"
           }
         ],
-        opts: [adapter: [recv_timeout: 2000]],
         query: "193.0.0.0/21",
         source: "Ripe.API.DB.search",
-        url: "https://rest.db.ripe.net/search.json?flags=r&type-filter=route,inetnum&query-string=193.0.0.0/21",
-        version: "1.106"
+        url: "https://rest.db.ripe.net/search.json?query-string=193.0.0.0/21&flags=r&type-filter=route%2Cinetnum",
       }
 
   """
   @spec search(binary, Keyword.t()) :: map
   def search(query, opts \\ []) do
-    # TODO: URI encode the url so you can look for "first lastname"
-    # db_search = "https://rest.db.ripe.net/search.json?"
-
-    flags =
-      opts
-      |> Keyword.filter(fn {_k, v} -> v == true end)
-      |> Enum.map(fn {k, _v} -> k end)
-
-    params =
-      opts
-      |> Keyword.drop([:timeout])
-      |> Keyword.drop(flags)
-      |> Enum.map(fn {k, v} -> {String.replace("#{k}", "_", "-", global: true), List.wrap(v)} end)
-      |> Enum.map(fn {k, l} -> for v <- l, do: "#{k}=#{v}" end)
-      |> List.flatten()
-      |> Kernel.++(flags)
-      |> Enum.join("&")
-
-    timeout = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
-
-    "#{@db_search}#{params}&query-string=#{query}"
-    |> API.fetch(timeout)
+    "search.json?query-string=#{query}"
+    |> API.db_req(opts)
     |> Map.put(:source, "Ripe.API.DB.search")
-    |> Map.put(:query, "#{query}")
+    |> Map.put(:query, query)
+    |> Map.drop([:headers, :opts])
     |> decode()
   end
 
@@ -611,8 +557,8 @@ defmodule Ripe.API.DB do
   - attribute names consist of alphanumeric characters plus hyphens
   - attributes names are case-insensitive, RIPE DB converts them to lowercase
   - the order of attributes listed in primary keys is important and determines
-    how the attribute values (binaries) are joined to form the primary key for
-    a search or lookup.
+    how the attribute values (binaries) are joined (without a separator) to
+    form the primary key for a search or lookup.
 
   ## Example
 
@@ -623,7 +569,6 @@ defmodule Ripe.API.DB do
           "ds-rdata", "notify", "mnt-by"],
         :lookup_keys => ["domain"],
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :primary_keys => ["domain"],
         :rir => "ripe",
         :source => "Ripe.API.DB.template",
@@ -714,17 +659,11 @@ defmodule Ripe.API.DB do
 
   """
   @spec template(binary, Keyword.t()) :: map
-  def template(object, opts \\ []) do
-    # @db_template -> "https://rest.db.ripe.net/metadata/templates"
-
-    timeout = [opts: [adapter: [recv_timeout: Keyword.get(opts, :timeout, 2_000)]]]
-
-    "#{@db_template}/#{object}.json"
-    |> API.fetch(timeout)
+  def template(type, opts \\ []) do
+    API.db_req("/metadata/templates/#{type}.json", opts)
     |> Map.put(:source, "Ripe.API.DB.template")
-    |> Map.put(:type, "#{object}")
+    |> Map.put(:type, "#{type}")
+    |> Map.drop([:headers, :opts])
     |> decode()
   end
-
-  # Helpers
 end

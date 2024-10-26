@@ -32,15 +32,17 @@ defmodule Ripe.API.Stat do
   """
 
   # TODO:
-  # - parameterize timeout` since as-routing-consistency on 1136 times out
-  # - put body["version"] into body's data so decoders can use it (or not)
-  # - check data_call_status, anything else than "supported - .." is an error
-  #   (especially "maintenance - ..." which means no info was retrieved)
-  # - add whois client to retrieve contact information, e.g. via
-  #   https://rest.db.ripe.net/{source}/{object-type}/{key}.json
-  #   see https://apps-test.db.ripe.net/docs/06.Update-Methods/01-RESTful-API.html#restful-uri-format
-  # - Normalize xxxx to ASxxxx for AS-numbers
-  # - use source: "Ripe.API.Stat.function" (as a string) (maybe create nx decode for that?)
+  # [x] parameterize timeout` since as-routing-consistency on 1136 times out
+  # [ ]  put body["version"] into body's data so decoders can use it (or not)
+  # [ ] check data_call_status, anything else than "supported - .." is an error
+  #     (especially "maintenance - ..." which means no info was retrieved)
+  # [ ] add whois client to retrieve contact information, e.g. via
+  #     https://rest.db.ripe.net/{source}/{object-type}/{key}.json
+  #     see https://apps-test.db.ripe.net/docs/06.Update-Methods/01-RESTful-API.html#restful-uri-format
+  # [ ] Normalize xxxx to ASxxxx for AS-numbers
+  # [ ] use source: "Ripe.API.Stat.function" (as a string) (maybe create nx decode for that?)
+  # [ ] check out https://rpki-validator.ripe.net/api/v1/validity/8075/145.69.64.0/22
+  #     see https://routinator.docs.nlnetlabs.nl/en/stable/api-endpoints.html
 
   use Tesla, only: [:get], docs: false
 
@@ -53,7 +55,7 @@ defmodule Ripe.API.Stat do
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
-  # Helpers
+  # [[ Helpers ]]
 
   defp decode(%{http: 200, source: "Ripe.API.Stat.announced-prefixes"} = result) do
     result
@@ -143,6 +145,8 @@ defmodule Ripe.API.Stat do
     end
   end
 
+  # [[ Message ]]
+
   defp decode_messages(list) do
     # concatenate messages per message-type
     list
@@ -162,7 +166,7 @@ defmodule Ripe.API.Stat do
     |> then(fn query -> "#{@base_url}/#{endpoint}/data.json?#{query}" end)
   end
 
-  # API
+  # [[ API ]]
 
   @doc """
   Retrieve information from a given RIPEstat `endpoint`, possibly decoding its results.
@@ -170,7 +174,6 @@ defmodule Ripe.API.Stat do
   The `endpoint` parameter should correspond to a valid endpoint listed at the
   [RIPEstat API](https://stat.ripe.net/docs/02.data-api/), while
   `params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
-
 
   Optionally, `params` may include a Ripex-specific `timeout: N` option to wait
   N milliseconds instead of the default 2000 ms.  This is dropped from `params`,
@@ -203,11 +206,10 @@ defmodule Ripe.API.Stat do
   an ip prefix/address as a `resource` and optionally a `starttime`, `endtime`
   and `lod` (level of detail). Its `data` field is not decoded.
 
-      iex> fetch("rir", resource: "94.198.159.35")
+      iex> fetch("rir", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.rir",
         :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "call_name" => "rir",
@@ -228,11 +230,10 @@ defmodule Ripe.API.Stat do
   If an endpoint does not exist, RIPE will happily inform you about that,
   the `call_status` is "supported"  and `status` is "ok" (oddly enough).
 
-      iex> fetch("iri", resource: "94.198.159.35")
+      iex> fetch("iri", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.iri",
         :url => "https://stat.ripe.net/data/iri/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "call_name" => "iri",
@@ -247,12 +248,11 @@ defmodule Ripe.API.Stat do
 
   If however, a parameter is inappropriate if will report an error:
 
-      iex> fetch("rir", resource: "oops")
+      iex> fetch("rir", resource: "oops") |> Map.drop([:cache, :headers, :opts])
       %{
         :error => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address.",
         :http => 400,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.rir",
         :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=oops",
         "call_name" => "rir",
@@ -267,11 +267,10 @@ defmodule Ripe.API.Stat do
   The [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
   takes a single `resource` parameter whose value can be an IP address, prefix or an AS number.
 
-      iex> fetch("abuse-contact-finder", resource: "94.198.159.35")
+      iex> fetch("abuse-contact-finder", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
       %{
         :http => 200,
         :method => :get,
-        :opts => [adapter: [recv_timeout: 2000]],
         :source => "Ripe.API.Stat.abuse-contact-finder",
         :url => "https://stat.ripe.net/data/abuse-contact-finder/data.json?sourceapp=github-ripex&resource=94.198.159.35",
         "abuse-c" => ["abuse@sidn.nl"],
@@ -312,6 +311,20 @@ defmodule Ripe.API.Stat do
     |> Map.delete(:body)
     |> decode()
   end
+
+  # [[ TODO ]]
+  #
+  # [ ] https://stat.ripe.net/docs/02.data-api/routing-status.html
+  #     BGP entries by ASN or prefix (incl. more specifics & originating AS for
+  #     prefixes)
+  #
+  # [ ] https://stat.ripe.net/docs/02.data-api/whois.html
+  #     returns IRR entries for ASN or prefix (route obj's w/ origin)
+  #
+  # [ ] https://stat.ripe.net/docs/02.data-api/related-prefixes.html
+  #     returns related prefixes, incl. more specifics
+
+  # [[ RPKI cmd ]]
 
   @doc """
   Returns a map with bgp/whois/rpki-information on the routes announced by given `as`.
@@ -365,10 +378,16 @@ defmodule Ripe.API.Stat do
     |> Map.put(:source, "Ripe.API.Stat.rpki")
   end
 
+  @doc """
+  Returns the containing prefix and _announcing ASN's_ for given IP address.
+
+  Note that this ignores any existing route objects.
+  """
   def ip2asn(ip, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 10000)
 
     fetch("network-info", resource: ip, timeout: timeout)
+    |> IO.inspect()
     |> Map.get("asns")
     |> case do
       nil -> []

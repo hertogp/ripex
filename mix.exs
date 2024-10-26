@@ -22,6 +22,7 @@ defmodule Ripex.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:req, "~> 0.5.0"},
       {:tesla, "~> 1.4.0"},
       {:hackney, "~> 1.10"},
       {:iptrie, "~> 0.9"},

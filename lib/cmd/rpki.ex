@@ -172,6 +172,7 @@ defmodule Ripex.Cmd.Rpki do
   defp report(as, opts) do
     timeout = Keyword.get(opts, :timeout, 10000)
     verbose = Keyword.get(opts, :verbose, false)
+    IO.inspect(timeout, label: :timeout)
 
     with %{http: 200} = obj <- Ripe.API.Stat.rpki(as, timeout: timeout) do
       case verbose do

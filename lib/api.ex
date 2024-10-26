@@ -24,19 +24,32 @@ defmodule Ripe.API do
   plug(Tesla.Middleware.FollowRedirects, max_redirects: 3)
   plug(Tesla.Middleware.JSON)
 
+  adapter(Tesla.Adapter.Hackney)
+
   alias Ripe.API.Cache
 
-  # Helpers
+  # [[ Decoders ]]
 
-  @spec decode(Tesla.Env.result()) :: map
+  @spec decode(Tesla.Env.result() | Req.Response.t() | tuple) :: map
   defp decode({:ok, env}) do
     %{
       url: env.url,
       http: env.status,
       body: env.body,
-      method: env.method,
-      opts: env.opts,
-      headers: env.headers
+      method: env.method
+      # opts: env.opts,
+      # headers: env.headers
+    }
+  end
+
+  defp decode({%Req.Request{} = req, %Req.Response{} = resp}) do
+    %{
+      url: URI.to_string(req.url),
+      http: resp.status,
+      body: resp.body,
+      method: req.method,
+      opts: req.options,
+      headers: resp.headers
     }
   end
 
@@ -77,7 +90,6 @@ defmodule Ripe.API do
          body: "some html",
          http: 200,
          method: :get,
-         opts: [],
          url: "www.example.nl"
       }
 
@@ -88,7 +100,6 @@ defmodule Ripe.API do
          error: :nxdomain,
          http: -1,
          url: "www.example.nlxyz",
-         opts: []
       }
 
   When things almost go right:
@@ -99,7 +110,6 @@ defmodule Ripe.API do
         body: "some html",
         http: 404,
         method: :get,
-        opts: [],
         url: "www.example.nl/acdc.txt"
       }
 
@@ -108,19 +118,11 @@ defmodule Ripe.API do
   def fetch(url, opts \\ []) do
     # Note:
     # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
-    # - in case of a timeout, decode cannot add the url, so add it here.
-    [opts: [adapter: [recv_timeout: N]]]
-    {time, opts} = Keyword.pop(opts, :timeout, 2000)
+    # - in case of a timeout, decode cannot add the url, so add it after decode
     {cache, opts} = Keyword.pop(opts, :cache, true)
 
-    # long way round, but honors any other opts already in [opts: [..]]
-    opts =
-      opts
-      |> Keyword.get(:opts, [])
-      |> Keyword.put(:adapter, recv_timeout: time)
-      |> then(fn adapter_opts -> Keyword.put(opts, :opts, adapter_opts) end)
-
     url = URI.encode(url)
+    IO.inspect(url, label: :api_fetch)
 
     if cache do
       case Cache.get(url) do
@@ -139,9 +141,28 @@ defmodule Ripe.API do
     end
     |> decode()
     |> Map.put(:url, url)
-    |> Map.put(:cache, cache)
-    |> Map.put(:opts, Keyword.get(opts, :opts, []))
+
+    # |> Map.put(:cache, cache)
+    # |> Map.put(:opts, Keyword.get(opts, :opts, []))
   end
+
+  @base_req Req.new(json: true, headers: [accept: "application/json", user_agent: "ripex"])
+  @db_req Req.merge(@base_req, base_url: "https://rest.db.ripe.net")
+
+  @doc """
+  Access endpoints on https://rest.db.ripe.net.
+
+  """
+  @spec db_req(binary, Keyword.t()) :: map
+  def db_req(url, opts \\ []) do
+    @db_req
+    |> Req.merge(url: url)
+    |> Req.merge(opts)
+    |> Req.run()
+    |> decode()
+  end
+
+  # [[ Helpers ]]
 
   @doc """
   In a given `map`, replace map-values by a single value by some given `key`.
