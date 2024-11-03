@@ -44,16 +44,7 @@ defmodule Ripe.API.Stat do
   # [ ] check out https://rpki-validator.ripe.net/api/v1/validity/8075/145.69.64.0/22
   #     see https://routinator.docs.nlnetlabs.nl/en/stable/api-endpoints.html
 
-  use Tesla, only: [:get], docs: false
-
   alias Ripe.API
-
-  @base_url "https://stat.ripe.net/data"
-  # @sourceapp {:sourceapp, "github-ripex"}
-
-  plug(Tesla.Middleware.BaseUrl, @base_url)
-  plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
-  plug(Tesla.Middleware.JSON)
 
   # [[ Helpers ]]
 

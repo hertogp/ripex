@@ -14,34 +14,11 @@ defmodule Ripe.API do
 
   """
 
-  use Tesla, only: [:get], docs: false
-
-  plug(Tesla.Middleware.Headers, [
-    {"accept", "application/json"},
-    {"user-agent", "ripex"}
-  ])
-
-  plug(Tesla.Middleware.FollowRedirects, max_redirects: 3)
-  plug(Tesla.Middleware.JSON)
-
-  adapter(Tesla.Adapter.Hackney)
-
   alias Ripe.API.Cache
 
   # [[ Decoders ]]
 
-  @spec decode(Tesla.Env.result() | Req.Response.t() | tuple) :: map
-  defp decode({:ok, env}) do
-    %{
-      url: env.url,
-      http: env.status,
-      body: env.body,
-      method: env.method
-      # opts: env.opts,
-      # headers: env.headers
-    }
-  end
-
+  @spec decode(Req.Response.t() | tuple) :: map
   defp decode({%Req.Request{} = req, %Req.Response{} = resp}) do
     %{
       url: URI.to_string(req.url),
@@ -61,12 +38,12 @@ defmodule Ripe.API do
   # @doc """
   # Returns a map containing the *semi*-decoded response from Ripe based on given `url`.
   #
-  # In case of a successful `t:Tesla.Env.result/0`, the map contains atom keys:
+  # In case of a successful `t:Req.Response.t/0`, the map contains atom keys:
   # - `:url`, the url visited
   # - `:http`, the https status of the call, (-1 if an error occurred)
   # - `:body`, the body of the result
   # - `:method`, http method used, usually just `:get`
-  # - `opts`, any options passed to Tesla (like recv_timeout)
+  # - `opts`, any options passed to Req.new (like receive_timeout)
   #
   # Note that this might still mean that the endpoint had problems returning
   # any useful data.
@@ -114,37 +91,6 @@ defmodule Ripe.API do
   #     }
   #
   # """
-  # @spec fetch(binary, Keyword.t()) :: map
-  # def fetch(url, opts \\ []) do
-  #   # Note:
-  #   # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
-  #   # - in case of a timeout, decode cannot add the url, so add it after decode
-  #   {cache, opts} = Keyword.pop(opts, :cache, true)
-  #
-  #   url = URI.encode(url)
-  #   IO.inspect(url, label: :api_fetch)
-  #
-  #   if cache do
-  #     case Cache.get(url) do
-  #       nil ->
-  #         url
-  #         |> get(opts)
-  #         |> Cache.put(url)
-  #
-  #       data ->
-  #         data
-  #     end
-  #   else
-  #     url
-  #     |> get(opts)
-  #     |> Cache.put(url)
-  #   end
-  #   |> decode()
-  #   |> Map.put(:url, url)
-  #
-  #   # |> Map.put(:cache, cache)
-  #   # |> Map.put(:opts, Keyword.get(opts, :opts, []))
-  # end
 
   @doc """
   Access endpoints on https://rest.db.ripe.net.

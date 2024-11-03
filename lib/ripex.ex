@@ -49,20 +49,6 @@ defmodule Ripex do
 
   [ ] todo, if useful
 
-  lib/ripe                       - api.ex utilities for all API's + general documentation
-  lib/ripe/api
-
-  lib/ripe/api/stat                   - stat.ripe Tesla setup
-  lib/ripe/api/stat/endpoint(s)       - calls to endpoints
-
-  lib/ripe/api/dbsearch               - db.ripe Tesla setup
-  lib/ripe/api/dbsearh/endpoints(s)   - calls to RIPEDB endpoints
-
-  lib/ripe/api/dblookup               - db.ripe Tesla setup
-  lib/ripe/api/dblookup/endpoints(s)  - calls to RIPEDB endpoints
-
-  lib/ripe/api/rdap
-  lib/ripe/api/rdap/endpoints(s)
 
   """
 end

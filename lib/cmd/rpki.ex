@@ -27,7 +27,6 @@ defmodule Ripex.Cmd.Rpki do
   - [x] sort the import/export lists
   - [x] handle errors, timeouts etc... (try 6695)
   - [x] figure out why 6695 works in browser, not in escript (even with 60K ms timeout?)
-  - [x] figure out why tesla does not seem to wait for specified timeout duration
   """
 
   @aliases [

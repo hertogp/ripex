@@ -23,8 +23,6 @@ defmodule Ripex.MixProject do
   defp deps do
     [
       {:req, "~> 0.5.0"},
-      {:tesla, "~> 1.4.0"},
-      {:hackney, "~> 1.10"},
       {:iptrie, "~> 0.9"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
