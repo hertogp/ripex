@@ -11,7 +11,9 @@ defmodule Ripex.Cmd.Tmp do
   # - [x] https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519
   # - [ ] https://geoip.linode.com/
   # - [ ] use empty list (byte size 2) instead of 0 (byte size 3)
-  #
+  # - [ ] https://support.google.com/a/answer/10026322?hl=en
+  #       [ ] https://www.gstatic.com/ipranges/goog.json
+  #       [x] https://www.gstatic.com/ipranges/cloud.json
   def main(_) do
     IO.puts("here we go!")
 
@@ -27,8 +29,8 @@ defmodule Ripex.Cmd.Tmp do
 
     # [[ AWS ]]
     aws =
-      providers.aws
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.aws)
+      |> Ripe.API.call()
       |> API.move_keyup("ipv6_prefixes")
       |> API.move_keyup("prefixes")
 
@@ -42,8 +44,8 @@ defmodule Ripex.Cmd.Tmp do
 
     # [[ Azure ]]
     body =
-      providers.azure
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.azure)
+      |> Ripe.API.call()
       |> Map.get(:body)
 
     url =
@@ -52,32 +54,31 @@ defmodule Ripex.Cmd.Tmp do
       |> String.replace("url=", "")
 
     az_pfxs =
-      Ripe.API.fetch(url)
+      Req.new(url: url)
+      |> Ripe.API.call()
       |> Map.get(:body)
-      |> Jason.decode()
-      |> elem(1)
       |> Map.get("values")
       |> Enum.map(fn m -> m["properties"]["addressPrefixes"] end)
       |> List.flatten()
 
     # [[ Cloudflare ]]
     cflare =
-      providers.cloudflare
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.cloudflare)
+      |> Ripe.API.call()
       |> get_in([:body, "result"])
       |> then(fn m -> m["ipv4_cidrs"] ++ m["ipv6_cidrs"] end)
 
     # [[ Google ]]
     google =
-      providers.google
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.google)
+      |> Ripe.API.call()
       |> get_in([:body, "prefixes"])
       |> Enum.map(fn m -> Map.get(m, "ipv4Prefix", m["ipv6Prefix"]) end)
 
     # [[ Oracle ]]
     oracle =
-      providers.oracle
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.oracle)
+      |> Ripe.API.call()
       |> get_in([:body, "regions"])
       |> Enum.map(fn m -> Map.get(m, "cidrs", []) |> Enum.map(fn m -> m["cidr"] end) end)
       |> List.flatten()
@@ -85,16 +86,16 @@ defmodule Ripex.Cmd.Tmp do
 
     # [[ Digital Ocean ]]
     ocean =
-      providers.ocean
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.ocean)
+      |> Ripe.API.call()
       |> Map.get(:body)
       |> String.split("\n")
       |> Enum.map(fn line -> String.split(line, ",") |> hd() end)
       |> Enum.filter(fn pfx -> pfx != "" end)
 
     atlassian =
-      providers.atlassian
-      |> Ripe.API.fetch(timeout: 30_000)
+      Req.new(url: providers.atlassian)
+      |> Ripe.API.call()
       |> get_in([:body, "items"])
       |> Enum.map(fn m -> m["cidr"] end)
 

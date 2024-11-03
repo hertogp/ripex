@@ -58,108 +58,117 @@ defmodule Ripe.API do
 
   # API
 
-  @doc """
-  Returns a map containing the *semi*-decoded response from Ripe based on given `url`.
-
-  In case of a successful `t:Tesla.Env.result/0`, the map contains atom keys:
-  - `:url`, the url visited
-  - `:http`, the https status of the call, (-1 if an error occurred)
-  - `:body`, the body of the result
-  - `:method`, http method used, usually just `:get`
-  - `opts`, any options passed to Tesla (like recv_timeout)
-
-  Note that this might still mean that the endpoint had problems returning
-  any useful data.
-
-  In case of any errors, the map contains:
-  - `:http`, which is given the value of `-1`
-  - `:error`, with some message
-
-  Note:
-  - specify a timeout via: `[opts: [recv_timeout: 10_000]]`
-  - It's up to the caller to further decode the body of the response.
-  - fetch always uses the `Ripe.API.Cache` in order to prevent hammering Ripe unnecessarily.
-
-  ## Examples
-
-  When things go right:
-
-      iex> fetch("www.example.nl")
-      ...> |> Map.put(:body, "some html")
-      %{
-         body: "some html",
-         http: 200,
-         method: :get,
-         url: "www.example.nl"
-      }
-
-  When things go wrong:
-
-      iex> fetch("www.example.nlxyz")
-      %{
-         error: :nxdomain,
-         http: -1,
-         url: "www.example.nlxyz",
-      }
-
-  When things almost go right:
-
-      iex> fetch("www.example.nl/acdc.txt")
-      ...> |> Map.put(:body, "some html")
-      %{
-        body: "some html",
-        http: 404,
-        method: :get,
-        url: "www.example.nl/acdc.txt"
-      }
-
-  """
-  @spec fetch(binary, Keyword.t()) :: map
-  def fetch(url, opts \\ []) do
-    # Note:
-    # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
-    # - in case of a timeout, decode cannot add the url, so add it after decode
-    {cache, opts} = Keyword.pop(opts, :cache, true)
-
-    url = URI.encode(url)
-    IO.inspect(url, label: :api_fetch)
-
-    if cache do
-      case Cache.get(url) do
-        nil ->
-          url
-          |> get(opts)
-          |> Cache.put(url)
-
-        data ->
-          data
-      end
-    else
-      url
-      |> get(opts)
-      |> Cache.put(url)
-    end
-    |> decode()
-    |> Map.put(:url, url)
-
-    # |> Map.put(:cache, cache)
-    # |> Map.put(:opts, Keyword.get(opts, :opts, []))
-  end
-
-  @base_req Req.new(json: true, headers: [accept: "application/json", user_agent: "ripex"])
-  @db_req Req.merge(@base_req, base_url: "https://rest.db.ripe.net")
+  # @doc """
+  # Returns a map containing the *semi*-decoded response from Ripe based on given `url`.
+  #
+  # In case of a successful `t:Tesla.Env.result/0`, the map contains atom keys:
+  # - `:url`, the url visited
+  # - `:http`, the https status of the call, (-1 if an error occurred)
+  # - `:body`, the body of the result
+  # - `:method`, http method used, usually just `:get`
+  # - `opts`, any options passed to Tesla (like recv_timeout)
+  #
+  # Note that this might still mean that the endpoint had problems returning
+  # any useful data.
+  #
+  # In case of any errors, the map contains:
+  # - `:http`, which is given the value of `-1`
+  # - `:error`, with some message
+  #
+  # Note:
+  # - specify a timeout via: `[opts: [recv_timeout: 10_000]]`
+  # - It's up to the caller to further decode the body of the response.
+  # - fetch always uses the `Ripe.API.Cache` in order to prevent hammering Ripe unnecessarily.
+  #
+  # ## Examples
+  #
+  # When things go right:
+  #
+  #     iex> fetch("www.example.nl")
+  #     ...> |> Map.put(:body, "some html")
+  #     %{
+  #        body: "some html",
+  #        http: 200,
+  #        method: :get,
+  #        url: "www.example.nl"
+  #     }
+  #
+  # When things go wrong:
+  #
+  #     iex> fetch("www.example.nlxyz")
+  #     %{
+  #        error: :nxdomain,
+  #        http: -1,
+  #        url: "www.example.nlxyz",
+  #     }
+  #
+  # When things almost go right:
+  #
+  #     iex> fetch("www.example.nl/acdc.txt")
+  #     ...> |> Map.put(:body, "some html")
+  #     %{
+  #       body: "some html",
+  #       http: 404,
+  #       method: :get,
+  #       url: "www.example.nl/acdc.txt"
+  #     }
+  #
+  # """
+  # @spec fetch(binary, Keyword.t()) :: map
+  # def fetch(url, opts \\ []) do
+  #   # Note:
+  #   # - see https://hexdocs.pm/tesla/Tesla.Env.html#content
+  #   # - in case of a timeout, decode cannot add the url, so add it after decode
+  #   {cache, opts} = Keyword.pop(opts, :cache, true)
+  #
+  #   url = URI.encode(url)
+  #   IO.inspect(url, label: :api_fetch)
+  #
+  #   if cache do
+  #     case Cache.get(url) do
+  #       nil ->
+  #         url
+  #         |> get(opts)
+  #         |> Cache.put(url)
+  #
+  #       data ->
+  #         data
+  #     end
+  #   else
+  #     url
+  #     |> get(opts)
+  #     |> Cache.put(url)
+  #   end
+  #   |> decode()
+  #   |> Map.put(:url, url)
+  #
+  #   # |> Map.put(:cache, cache)
+  #   # |> Map.put(:opts, Keyword.get(opts, :opts, []))
+  # end
 
   @doc """
   Access endpoints on https://rest.db.ripe.net.
 
   """
-  @spec db_req(binary, Keyword.t()) :: map
-  def db_req(url, opts \\ []) do
-    @db_req
-    |> Req.merge(url: url)
-    |> Req.merge(opts)
-    |> Req.run()
-    |> decode()
+  @spec call(Req.Request.t()) :: map
+  def call(req) do
+    url =
+      req
+      |> Req.Steps.put_base_url()
+      |> Req.Steps.put_params()
+      |> Map.get(:url)
+      |> URI.to_string()
+
+    case Cache.get(url) do
+      nil ->
+        req
+        |> Req.run()
+        |> decode()
+        |> Cache.put(url)
+
+      data ->
+        data
+    end
   end
 
   # [[ Helpers ]]

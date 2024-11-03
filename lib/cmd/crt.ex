@@ -59,7 +59,7 @@ defmodule Ripex.Cmd.Crt do
     IO.puts(@csv_fields)
 
     for name <- args do
-      API.Crt.fetch(name, timeout: timeout)
+      API.Crt.call(name, receive_timeout: timeout)
       |> Map.put(:opts, opts)
       |> decode()
     end
@@ -186,9 +186,9 @@ defmodule Ripex.Cmd.Crt do
     end
   end
 
-  def san_names(id) do
+  defp san_names(id) do
     id
-    |> API.Crt.fetch()
+    |> API.Crt.call()
     |> Map.get(:body)
     |> then(fn str -> Regex.scan(~r/dns:[a-zA-Z0-9._-]+/i, str) end)
     |> List.flatten()

@@ -49,13 +49,25 @@ defmodule Ripe.API.Stat do
   alias Ripe.API
 
   @base_url "https://stat.ripe.net/data"
-  @sourceapp {:sourceapp, "github-ripex"}
+  # @sourceapp {:sourceapp, "github-ripex"}
 
   plug(Tesla.Middleware.BaseUrl, @base_url)
   plug(Tesla.Middleware.Headers, [{"accept", "application/json"}])
   plug(Tesla.Middleware.JSON)
 
   # [[ Helpers ]]
+
+  def new(url, opts) do
+    # Req for Ripe stat API
+    Req.new(
+      url: "#{url}/data.json",
+      base_url: "https://stat.ripe.net/data",
+      json: true,
+      headers: [accept: "application/json", user_agent: "ripex"],
+      params: [sourceapp: "github/ripex"]
+    )
+    |> Req.merge(opts)
+  end
 
   defp decode(%{http: 200, source: "Ripe.API.Stat.announced-prefixes"} = result) do
     result
@@ -66,6 +78,8 @@ defmodule Ripe.API.Stat do
   end
 
   defp decode(%{http: 200, source: "Ripe.API.Stat.network-info"} = result) do
+    IO.inspect(result)
+
     result
     |> API.move_keyup("asns")
     |> API.move_keyup("prefix")
@@ -158,26 +172,169 @@ defmodule Ripe.API.Stat do
     end)
   end
 
-  defp url(endpoint, params) do
-    params
-    |> List.insert_at(0, @sourceapp)
-    |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
-    |> Enum.join("&")
-    |> then(fn query -> "#{@base_url}/#{endpoint}/data.json?#{query}" end)
-  end
+  # defp url(endpoint, params) do
+  #   params
+  #   |> List.insert_at(0, @sourceapp)
+  #   |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+  #   |> Enum.join("&")
+  #   |> then(fn query -> "#{@base_url}/#{endpoint}/data.json?#{query}" end)
+  # end
 
   # [[ API ]]
+
+  # @doc """
+  # Retrieve information from a given RIPEstat `endpoint`, possibly decoding its results.
+  #
+  # The `endpoint` parameter should correspond to a valid endpoint listed at the
+  # [RIPEstat API](https://stat.ripe.net/docs/02.data-api/), while
+  # `params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
+  #
+  # Optionally, `params` may include a Ripex-specific `timeout: N` option to wait
+  # N milliseconds instead of the default 2000 ms.  This is dropped from `params`,
+  # before forming the url to visit.
+  #
+  # In case of success, the result is a map with atom keys that include:
+  # - `http:` - the http return code
+  # - `method`: - always `:get`
+  # - `opts` - options passed on to the http client
+  # - `source` - "Ripe.API.Stat." <> endpoint
+  #
+  # and some binary keys that are lifted from the repsonse's `:body` into the outer map:
+  # - "version" - which lists the endpoint's version
+  # - "call_name" - which originally was called "data_call_name"
+  # - "call_status" - which originally was call "data_call_name" and is limited to its first word.
+  # - "status" - status of the call's result
+  # - "messages" - which may indicate additional info and/or error messages
+  # - "data" - which is the actual endpoint data returned.
+  #
+  # In case of success, some endpoints will have the "data" decoded further.
+  # There are *a lot* of endpoints, so for most endpoints the caller needs to
+  # decode the "data" field herself.
+  #
+  # In case of an error, an `:error` field is added which is all the lines in
+  # "messages" field joined by a newline and no further decoding takes place.
+  #
+  # ## Examples
+  #
+  # The [rir](https://stat.ripe.net/docs/02.data-api/rir.html#rir) endpoint takes a
+  # an ip prefix/address as a `resource` and optionally a `starttime`, `endtime`
+  # and `lod` (level of detail). Its `data` field is not decoded.
+  #
+  #     iex> fetch("rir", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
+  #     %{
+  #       :http => 200,
+  #       :method => :get,
+  #       :source => "Ripe.API.Stat.rir",
+  #       :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=94.198.159.35",
+  #       "call_name" => "rir",
+  #       "call_status" => "supported",
+  #       "data" => %{
+  #         "latest" => "2023-04-07T00:00:00",
+  #         "lod" => 1,
+  #         "query_endtime" => "2023-04-07T00:00:00",
+  #         "query_starttime" => "2023-04-07T00:00:00",
+  #         "resource" => "94.198.159.35/32",
+  #         "rirs" => [%{"first_time" => "2023-04-07T00:00:00", "last_time" => "2023-04-07T00:00:00", "rir" => "RIPE NCC"}]
+  #       },
+  #       "messages" => %{"info" => "IP address has been converted to a prefix"},
+  #       "status" => "ok",
+  #       "version" => "0.1"
+  #     }
+  #
+  # If an endpoint does not exist, RIPE will happily inform you about that,
+  # the `call_status` is "supported"  and `status` is "ok" (oddly enough).
+  #
+  #     iex> fetch("iri", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
+  #     %{
+  #       :http => 200,
+  #       :method => :get,
+  #       :source => "Ripe.API.Stat.iri",
+  #       :url => "https://stat.ripe.net/data/iri/data.json?sourceapp=github-ripex&resource=94.198.159.35",
+  #       "call_name" => "iri",
+  #       "call_status" => "supported",
+  #       "data" => %{},
+  #       "messages" => %{
+  #         "info" => "This data call does not exist on RIPEstat. See https://stat.ripe.net/docs/data_api for available data calls."
+  #       },
+  #       "status" => "ok",
+  #       "version" => "1.0"
+  #     }
+  #
+  # If however, a parameter is inappropriate if will report an error:
+  #
+  #     iex> fetch("rir", resource: "oops") |> Map.drop([:cache, :headers, :opts])
+  #     %{
+  #       :error => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address.",
+  #       :http => 400,
+  #       :method => :get,
+  #       :source => "Ripe.API.Stat.rir",
+  #       :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=oops",
+  #       "call_name" => "rir",
+  #       "call_status" => "supported",
+  #       "data" => %{},
+  #       "messages" => %{"error" => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address."},
+  #       "status" => "error",
+  #       "version" => "0.1"
+  #     }
+  #
+  #
+  # The [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
+  # takes a single `resource` parameter whose value can be an IP address, prefix or an AS number.
+  #
+  #     iex> fetch("abuse-contact-finder", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
+  #     %{
+  #       :http => 200,
+  #       :method => :get,
+  #       :source => "Ripe.API.Stat.abuse-contact-finder",
+  #       :url => "https://stat.ripe.net/data/abuse-contact-finder/data.json?sourceapp=github-ripex&resource=94.198.159.35",
+  #       "abuse-c" => ["abuse@sidn.nl"],
+  #       "call_name" => "abuse-contact-finder",
+  #       "call_status" => "supported",
+  #       "messages" => %{},
+  #       "rir" => "ripe",
+  #       "status" => "ok",
+  #       "version" => "2.1"
+  #     }
+  #
+  #
+  # Other endpoints that have their `data` field encoded, include:
+  # - [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
+  # - [as-overview](https://stat.ripe.net/docs/02.data-api/as-overview.html)
+  # - [as-routing-consistency](https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html)
+  # - [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
+  # - [prefix-overview](https://stat.ripe.net/docs/02.data-api/prefix-overview.html)
+  # - [rpki-validation](https://stat.ripe.net/docs/02.data-api/rpki-validation.html)
+  #
+  # """
+  # @spec fetch(binary, Keyword.t()) :: map
+  # def fetch(endpoint, params \\ []) do
+  #   {time, params} = Keyword.pop(params, :timeout, 2000)
+  #   opts = [opts: [adapter: [recv_timeout: time]]]
+  #   first_word = fn str -> String.split(str) |> hd() end
+  #
+  #   endpoint
+  #   |> url(params)
+  #   |> API.fetch(opts)
+  #   |> Map.put(:source, "Ripe.API.Stat.#{endpoint}")
+  #   |> API.move_keyup("version")
+  #   |> API.move_keyup("data_call_name", rename: "call_name")
+  #   |> API.move_keyup("data_call_status", rename: "call_status", transform: first_word)
+  #   |> API.move_keyup("status")
+  #   |> API.move_keyup("data")
+  #   |> API.move_keyup("messages", transform: &decode_messages/1)
+  #   |> Map.delete(:body)
+  #   |> decode()
+  # end
 
   @doc """
   Retrieve information from a given RIPEstat `endpoint`, possibly decoding its results.
 
   The `endpoint` parameter should correspond to a valid endpoint listed at the
   [RIPEstat API](https://stat.ripe.net/docs/02.data-api/), while
-  `params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
+  `:params` is a `t:Keyword.t/0` list and depends on the endpoint being accessed.
 
-  Optionally, `params` may include a Ripex-specific `timeout: N` option to wait
-  N milliseconds instead of the default 2000 ms.  This is dropped from `params`,
-  before forming the url to visit.
+  Optionally, a timeout can be specified as well via `receive_timeout: N` which
+  N milliseconds instead of the default 15_000 ms.
 
   In case of success, the result is a map with atom keys that include:
   - `http:` - the http return code
@@ -202,105 +359,13 @@ defmodule Ripe.API.Stat do
 
   ## Examples
 
-  The [rir](https://stat.ripe.net/docs/02.data-api/rir.html#rir) endpoint takes a
-  an ip prefix/address as a `resource` and optionally a `starttime`, `endtime`
-  and `lod` (level of detail). Its `data` field is not decoded.
-
-      iex> fetch("rir", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
-      %{
-        :http => 200,
-        :method => :get,
-        :source => "Ripe.API.Stat.rir",
-        :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=94.198.159.35",
-        "call_name" => "rir",
-        "call_status" => "supported",
-        "data" => %{
-          "latest" => "2023-04-07T00:00:00",
-          "lod" => 1,
-          "query_endtime" => "2023-04-07T00:00:00",
-          "query_starttime" => "2023-04-07T00:00:00",
-          "resource" => "94.198.159.35/32",
-          "rirs" => [%{"first_time" => "2023-04-07T00:00:00", "last_time" => "2023-04-07T00:00:00", "rir" => "RIPE NCC"}]
-        },
-        "messages" => %{"info" => "IP address has been converted to a prefix"},
-        "status" => "ok",
-        "version" => "0.1"
-      }
-
-  If an endpoint does not exist, RIPE will happily inform you about that,
-  the `call_status` is "supported"  and `status` is "ok" (oddly enough).
-
-      iex> fetch("iri", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
-      %{
-        :http => 200,
-        :method => :get,
-        :source => "Ripe.API.Stat.iri",
-        :url => "https://stat.ripe.net/data/iri/data.json?sourceapp=github-ripex&resource=94.198.159.35",
-        "call_name" => "iri",
-        "call_status" => "supported",
-        "data" => %{},
-        "messages" => %{
-          "info" => "This data call does not exist on RIPEstat. See https://stat.ripe.net/docs/data_api for available data calls."
-        },
-        "status" => "ok",
-        "version" => "1.0"
-      }
-
-  If however, a parameter is inappropriate if will report an error:
-
-      iex> fetch("rir", resource: "oops") |> Map.drop([:cache, :headers, :opts])
-      %{
-        :error => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address.",
-        :http => 400,
-        :method => :get,
-        :source => "Ripe.API.Stat.rir",
-        :url => "https://stat.ripe.net/data/rir/data.json?sourceapp=github-ripex&resource=oops",
-        "call_name" => "rir",
-        "call_status" => "supported",
-        "data" => %{},
-        "messages" => %{"error" => "oops is of an unsupported resource type. It should be an asn or IP prefix/range/address."},
-        "status" => "error",
-        "version" => "0.1"
-      }
-
-
-  The [abuse-contact-finder](https://stat.ripe.net/docs/02.data-api/abuse-contact-finder.html)
-  takes a single `resource` parameter whose value can be an IP address, prefix or an AS number.
-
-      iex> fetch("abuse-contact-finder", resource: "94.198.159.35") |> Map.drop([:cache, :headers, :opts])
-      %{
-        :http => 200,
-        :method => :get,
-        :source => "Ripe.API.Stat.abuse-contact-finder",
-        :url => "https://stat.ripe.net/data/abuse-contact-finder/data.json?sourceapp=github-ripex&resource=94.198.159.35",
-        "abuse-c" => ["abuse@sidn.nl"],
-        "call_name" => "abuse-contact-finder",
-        "call_status" => "supported",
-        "messages" => %{},
-        "rir" => "ripe",
-        "status" => "ok",
-        "version" => "2.1"
-      }
-
-
-  Other endpoints that have their `data` field encoded, include:
-  - [announced-prefixes](https://stat.ripe.net/docs/02.data-api/announced-prefixes.html)
-  - [as-overview](https://stat.ripe.net/docs/02.data-api/as-overview.html)
-  - [as-routing-consistency](https://stat.ripe.net/docs/02.data-api/as-routing-consistency.html)
-  - [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html)
-  - [prefix-overview](https://stat.ripe.net/docs/02.data-api/prefix-overview.html)
-  - [rpki-validation](https://stat.ripe.net/docs/02.data-api/rpki-validation.html)
-
   """
-  @spec fetch(binary, Keyword.t()) :: map
-  def fetch(endpoint, params \\ []) do
-    {time, params} = Keyword.pop(params, :timeout, 2000)
-    opts = [opts: [adapter: [recv_timeout: time]]]
+  def call(endpoint, opts \\ []) do
     first_word = fn str -> String.split(str) |> hd() end
 
     endpoint
-    |> url(params)
-    |> API.fetch(opts)
+    |> new(opts)
+    |> API.call()
     |> Map.put(:source, "Ripe.API.Stat.#{endpoint}")
     |> API.move_keyup("version")
     |> API.move_keyup("data_call_name", rename: "call_name")
@@ -308,7 +373,7 @@ defmodule Ripe.API.Stat do
     |> API.move_keyup("status")
     |> API.move_keyup("data")
     |> API.move_keyup("messages", transform: &decode_messages/1)
-    |> Map.delete(:body)
+    |> Map.drop([:body, :headers, :opts])
     |> decode()
   end
 
@@ -358,14 +423,16 @@ defmodule Ripe.API.Stat do
   @spec rpki(binary | integer, Keyword.t()) :: map
   def rpki(as, opts \\ []) do
     opts = Keyword.put(opts, :resource, as)
-    timeout = Keyword.get(opts, :timeout, 2000)
-    dta = fetch("as-routing-consistency", resource: as, timeout: timeout)
+    timeout = Keyword.get(opts, :timeout, 10000)
+    dta = call("as-routing-consistency", params: [resource: as], receive_timeout: timeout)
 
     if dta.http == 200 do
       dta
       |> update_in(["prefixes"], fn map ->
         for {pfx, attrs} <- map, into: %{} do
-          rpki = fetch("rpki-validation", resource: as, prefix: pfx, timeout: timeout)
+          rpki =
+            call("rpki-validation", params: [resource: as, prefix: pfx], receive_timeout: timeout)
+
           roas = Enum.filter(rpki["validating_roas"], fn roa -> roa["validity"] == "valid" end)
           pki_attrs = %{"rpki" => rpki["rpki_status"], "roas" => roas}
 
@@ -381,17 +448,13 @@ defmodule Ripe.API.Stat do
   @doc """
   Returns the containing prefix and _announcing ASN's_ for given IP address.
 
-  Note that this ignores any existing route objects.
+  Uses [network-info](https://stat.ripe.net/docs/02.data-api/network-info.html#network-info)
+  endpoint. Note that this ignores any existing route objects.
   """
-  def ip2asn(ip, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 10000)
-
-    fetch("network-info", resource: ip, timeout: timeout)
-    |> IO.inspect()
-    |> Map.get("asns")
-    |> case do
-      nil -> []
-      asns -> asns
-    end
+  def ip2asns(ip) do
+    "network-info"
+    |> call(params: [resource: ip])
+    |> IO.inspect(label: :network_info)
+    |> Map.get("asns", [])
   end
 end

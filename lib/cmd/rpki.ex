@@ -78,7 +78,7 @@ defmodule Ripex.Cmd.Rpki do
   end
 
   defp do_value(%{type: :pfx} = arg) do
-    Ripe.API.Stat.ip2asn(arg.pfx)
+    Ripe.API.Stat.ip2asns(arg.pfx)
     |> Enum.map(fn as -> Map.put(arg, :as, as) end)
   end
 
@@ -90,7 +90,7 @@ defmodule Ripex.Cmd.Rpki do
       |> Enum.map(fn ip -> Map.put(arg, :ip, "#{Pfx.new(ip)}") end)
 
     for m <- ips do
-      Ripe.API.Stat.ip2asn(m.ip)
+      Ripe.API.Stat.ip2asns(m.ip)
       |> Enum.map(fn as -> Map.put(m, :as, as) end)
     end
   end

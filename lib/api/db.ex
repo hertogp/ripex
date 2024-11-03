@@ -36,6 +36,18 @@ defmodule Ripe.API.DB do
 
   # [[ HELPERS ]]
 
+  @spec new(binary, Keyword.t()) :: Req.Request.t()
+  defp new(url, opts) do
+    # request for Ripe DB endpoint given by url (and opts)
+    Req.new(
+      url: url,
+      base_url: "https://rest.db.ripe.net",
+      json: true,
+      headers: [accept: "application/json", user_agent: "ripex"]
+    )
+    |> Req.merge(opts)
+  end
+
   @spec collect_keys_byvalue(map, fun()) :: [binary]
   defp collect_keys_byvalue(map, fun) when is_map(map) do
     # collect keys by value using given `fun` and sort keys on idx field if any
@@ -277,7 +289,8 @@ defmodule Ripe.API.DB do
   @spec abuse_c(binary, Keyword.t()) :: map
   def abuse_c(key, opts \\ []) do
     "/abuse-contact/#{key}.json"
-    |> API.db_req(opts)
+    |> new(opts)
+    |> API.call()
     |> Map.drop([:headers, :opts])
     |> Map.put(:source, "Ripe.API.DB.abuse_c")
     |> decode()
@@ -346,7 +359,9 @@ defmodule Ripe.API.DB do
   """
   @spec lookup(binary, binary, Keyword.t()) :: map
   def lookup(type, key, opts \\ []) do
-    API.db_req("/ripe/#{type}/#{key}.json", opts)
+    "/ripe/#{type}/#{key}.json"
+    |> new(opts)
+    |> API.call()
     |> Map.put(:source, "Ripe.API.DB.lookup")
     |> Map.put(:type, type)
     |> Map.drop([:headers, :opts])
@@ -490,7 +505,8 @@ defmodule Ripe.API.DB do
   @spec search(binary, Keyword.t()) :: map
   def search(query, opts \\ []) do
     "search.json?query-string=#{query}"
-    |> API.db_req(opts)
+    |> new(opts)
+    |> API.call()
     |> Map.put(:source, "Ripe.API.DB.search")
     |> Map.put(:query, query)
     |> Map.drop([:headers, :opts])
@@ -660,7 +676,9 @@ defmodule Ripe.API.DB do
   """
   @spec template(binary, Keyword.t()) :: map
   def template(type, opts \\ []) do
-    API.db_req("/metadata/templates/#{type}.json", opts)
+    "/metadata/templates/#{type}.json"
+    |> new(opts)
+    |> API.call()
     |> Map.put(:source, "Ripe.API.DB.template")
     |> Map.put(:type, "#{type}")
     |> Map.drop([:headers, :opts])

@@ -11,12 +11,9 @@ defmodule Ripe.API.Crt do
 
   alias Ripe.API
 
-  @base_url "https://crt.sh"
-  @timeout 300_000
-
   # Helpers
 
-  defp decode(%{http: 200, source: "Ripe.API.Crt.fetch"} = result),
+  defp decode(%{http: 200, source: "Ripe.API.Crt.call"} = result),
     do: result
 
   defp decode(%{http: -1} = result),
@@ -38,37 +35,34 @@ defmodule Ripe.API.Crt do
     end
   end
 
-  defp url(query) do
+  # API
+
+  @base_req Req.new(
+              base_url: "https://crt.sh",
+              json: true,
+              headers: [accept: "text/html", user_agent: "ripex"],
+              receive_timeout: 60_000
+            )
+
+  # Note: query for id is done by Ripex.Cmd.Crt for san names
+  defp params(query) do
     case String.match?(query, ~r/^\d+$/) do
       # TODO: for some reason id=<nr> fails?
-      true -> "#{@base_url}/?id=#{query}&output=html"
-      _ -> "#{@base_url}/?q=#{query}&output=json"
+      true -> [id: "#{query}", output: "html"]
+      _ -> [q: "#{query}", output: "json"]
     end
   end
 
-  # API
-
   @doc """
-  Todo
-
+  [ ] ToDo
   """
-  @spec fetch(binary, Keyword.t()) :: map
-  def fetch(query, opts \\ []) do
-    # use a hefty timeout since it may take a while...
-    # time = Keyword.get(opts, :timeout, @timeout)
-    # opts = [opts: [adapter: [recv_timeout: time]]]
-    opts = Keyword.put(opts, :timeout, @timeout)
-    # |> Keyword.put(:headers, [{"accept", "text/html"}])
-
-    opts =
-      if String.match?(query, ~r/^\d+$/),
-        do: Keyword.put(opts, :headers, [{"accept", "text/html"}]),
-        else: opts
-
-    query
-    |> url()
-    |> API.fetch(opts)
-    |> Map.put(:source, "Ripe.API.Crt.fetch")
+  @spec call(binary, Keyword.t()) :: map
+  def call(query, opts \\ []) do
+    @base_req
+    |> Req.merge(params: params(query))
+    |> Req.merge(opts)
+    |> API.call()
+    |> Map.put(:source, "Ripe.API.Crt.call")
     |> Map.put(:query, query)
     |> decode()
   end
