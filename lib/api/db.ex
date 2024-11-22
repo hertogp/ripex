@@ -31,7 +31,6 @@ defmodule Ripe.API.DB do
   #   `-> see https://ipmap.ripe.net/docs/02.api-reference/
   # - add flags: "r" by default to help avoid retrieving too much personal data (and get blocked)
   # - use the TEST database, but how?  Nothting seems to work and documentation is out of date it seems.
-  # - fake todo
   #
   # GRS=Global Resource Service, one of: RIPE, RADb, APNIC, ARIN, AfriNIC, LACNIC
 
