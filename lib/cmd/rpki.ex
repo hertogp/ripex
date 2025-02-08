@@ -216,7 +216,13 @@ defmodule Ripex.Cmd.Rpki do
       for {p, v} <- obj["prefixes"], into: [] do
         [p, "#{v["in_bgp"]}", "#{v["in_whois"]}", v["rpki"], roas(v["roas"])]
       end
-      |> Enum.sort()
+      |> Enum.sort_by(&(hd(&1) |> Pfx.cast()))
+
+    # ToDo (in Pfx): below sorts pfxlen first, then pfx number:
+    # [1.0.0.0/16, 1.0.0.0/24, 2.0.0.0/24, 2.0.0.0/16]
+    # -> [1.0.0.0/16, 2.0.0.0/16, 1.0.0.0/24, 2.0.0.0/24] and wanted is:
+    # => [1.0.0.0/16, 1.0.0.0/24, 2.0.0.0/16, 2.0.0.0/24]
+    # |> Enum.sort_by(&hd(&1), {:desc, Pfx})
 
     lol =
       [["prefix", "bgp", "whois", "rpki", "roas"] | lol]
